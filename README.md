@@ -2,6 +2,8 @@
 
 Obsidian 볼트(vault)를 그대로 데이터 저장소로 쓰는, 옛날 Squeak/Swiki 스타일의 가벼운 웹 위키 서버입니다. Node.js + Express로 만들었고, 볼트의 `.md` 파일을 직접 읽고 씁니다 — Obsidian 앱과 계속 호환됩니다.
 
+![스크린샷](screenshots/index.png)
+
 ## 특징
 
 - **단순 태그 문법** (표준 마크다운과는 다른, Squeak wiki 스타일)
