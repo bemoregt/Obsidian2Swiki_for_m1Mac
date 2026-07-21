@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title><%= typeof name !== 'undefined' ? name : 'Wiki' %></title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><a href="/">📖 Wiki</a></div>
+
+      <% if (typeof mode !== 'undefined' && mode) { %>
+        <div class="side-section page-mode-actions">
+          <h3>🗂️ 이 페이지</h3>
+          <% if (mode === 'view') { %>
+            <a class="btn big" href="/page/<%= encodeURIComponent(name) %>/edit">✏️ 편집 모드</a>
+          <% } else if (mode === 'edit') { %>
+            <a class="btn big" href="/page/<%= encodeURIComponent(name) %>">👁️ 보기 모드</a>
+            <button type="submit" form="edit-form" class="btn big primary">💾 저장 하기</button>
+          <% } %>
+        </div>
+      <% } %>
+
+      <div class="side-section">
+        <h3>📎 파일 업로드</h3>
+        <label class="btn big file-upload-label" for="file-upload-input">📤 파일 선택</label>
+        <input type="file" id="file-upload-input" class="file-upload-input">
+        <p class="side-hint" id="upload-status"></p>
+      </div>
+
+      <div class="side-section">
+        <h3>🔍 검색</h3>
+        <form action="/search" method="get">
+          <input type="text" name="q" placeholder="키워드" value="<%= typeof q !== 'undefined' ? q : '' %>">
+        </form>
+      </div>
+
+      <div class="side-section">
+        <h3><a href="/changes">🕘 히스토리</a></h3>
+        <p class="side-hint">최근 변경된 페이지</p>
+      </div>
+
+      <div class="side-section">
+        <h3><a href="/pages">📚 모든 페이지</a></h3>
+      </div>
+
+      <div class="side-section">
+        <h3><a href="/help">❓ 도움말</a></h3>
+      </div>
+    </aside>
+    <main class="content">

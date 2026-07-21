@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-squeak-wiki",
+  "version": "1.0.0",
+  "description": "Squeak-wiki style web interface over an Obsidian vault",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "highlight.js": "^11.11.1",
+    "multer": "^2.2.0"
+  }
+}

@@ -1,0 +1,14 @@
+<%- include('_header', { name, mode: 'edit' }) %>
+  <h1 class="page-name">편집: <%= name %></h1>
+  <form id="edit-form" method="post" action="/page/<%= encodeURIComponent(name) %>">
+    <div class="tagbar">
+      <button type="button" data-wrap="*" title="위키 링크 (새 페이지는 자동 생성)">*링크*</button>
+      <button type="button" data-wrap="!" title="강조">!강조!</button>
+      <button type="button" data-wrap="`" title="코드">`코드`</button>
+      <button type="button" data-line="# " title="제목">#제목</button>
+      <button type="button" data-line="- " title="목록">- 목록</button>
+    </div>
+    <textarea id="editor" name="body" rows="24" spellcheck="false"><%= body %></textarea>
+  </form>
+  <script src="/static/editor.js"></script>
+<%- include('_footer') %>

@@ -1,0 +1,14 @@
+<%- include('_header', { q }) %>
+  <h1>검색: <%= q %></h1>
+  <ul class="page-list">
+    <% results.forEach(function(r) { %>
+      <li>
+        <a href="/page/<%= encodeURIComponent(r.name) %>"><%= r.name %></a>
+        <% if (r.snippet) { %><div class="snippet">... <%= r.snippet %> ...</div><% } %>
+      </li>
+    <% }); %>
+    <% if (q && results.length === 0) { %>
+      <li>결과 없음. <a href="/new/<%= encodeURIComponent(q) %>"><%= q %>?</a> 페이지를 새로 만드시겠어요?</li>
+    <% } %>
+  </ul>
+<%- include('_footer') %>

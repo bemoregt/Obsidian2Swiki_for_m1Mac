@@ -1,0 +1,11 @@
+<%- include('_header', {}) %>
+  <h1>히스토리 (최근 변경)</h1>
+  <ul class="page-list">
+    <% pages.forEach(function(p) { %>
+      <li>
+        <a href="/page/<%= encodeURIComponent(p.name) %>"><%= p.name %></a>
+        <span class="mtime"><%= p.mtime.toLocaleString('ko-KR') %></span>
+      </li>
+    <% }); %>
+  </ul>
+<%- include('_footer') %>

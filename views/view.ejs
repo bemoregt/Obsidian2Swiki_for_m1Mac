@@ -1,0 +1,15 @@
+<%- include('_header', { name, mode: 'view' }) %>
+  <h1 class="page-name"><%= name %></h1>
+  <div class="page-body">
+    <%- html %>
+  </div>
+  <div class="tts-bar">
+    <button type="button" id="tts-btn" class="tts-btn" title="텍스트 읽어주기">🔊</button>
+    <select id="tts-voice-select" class="tts-voice-select" title="읽어주는 음성 선택" style="display:none"></select>
+  </div>
+  <div class="page-footer-nav">
+    <a class="btn" id="up-btn" style="display:none"></a>
+  </div>
+  <script src="/static/nav.js"></script>
+  <script src="/static/tts.js"></script>
+<%- include('_footer') %>
