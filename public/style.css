@@ -164,6 +164,10 @@ pre.hljs code { background: none; padding: 0; border-radius: 0; }
 
 a.wikilink { color: #0000cc; text-decoration: none; }
 a.wikilink:hover { text-decoration: underline; }
+
+.foreign-word { color: #0000ff; }
+
+.quoted-text { color: #8b0000; }
 a.wikilink-new {
   color: #aa4400;
   text-decoration: none;

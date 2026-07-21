@@ -1,101 +1,112 @@
 (function () {
   var btn = document.getElementById('tts-btn');
-  var select = document.getElementById('tts-voice-select');
   var body = document.querySelector('.page-body');
   if (!btn || !body) return;
 
-  if (!('speechSynthesis' in window)) {
-    btn.style.display = 'none';
-    if (select) select.style.display = 'none';
-    return;
+  var state = 'idle'; // idle | loading | playing
+  var chunks = [];
+  var chunkIndex = 0;
+  var currentAudio = null;
+  var prefetch = null;
+  var abort = false;
+
+  function resetBtn() {
+    btn.textContent = '🔊';
+    btn.disabled = false;
+    state = 'idle';
   }
 
-  var STORAGE_KEY = 'wikiTtsVoice';
-  var koreanVoices = [];
-
-  function scoreVoice(v) {
-    var n = v.name.toLowerCase();
-    if (n.indexOf('premium') !== -1 || n.indexOf('고급') !== -1 || n.indexOf('프리미엄') !== -1) return 3;
-    if (n.indexOf('enhanced') !== -1 || n.indexOf('neural') !== -1) return 2;
-    return 1;
+  // Split into sentence-sized pieces so playback can start on the first
+  // sentence instead of waiting for the whole page to synthesize.
+  function splitIntoChunks(text) {
+    var parts = text
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean);
+    var merged = [];
+    var buf = '';
+    parts.forEach(function (p) {
+      buf = buf ? buf + ' ' + p : p;
+      if (buf.length >= 20) {
+        merged.push(buf);
+        buf = '';
+      }
+    });
+    if (buf) merged.push(buf);
+    return merged;
   }
 
-  function bestVoice() {
-    var saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      var match = koreanVoices.find(function (v) { return v.name === saved; });
-      if (match) return match;
-    }
-    var sorted = koreanVoices.slice().sort(function (a, b) { return scoreVoice(b) - scoreVoice(a); });
-    return sorted[0] || null;
+  function fetchChunk(text) {
+    return fetch('/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: text,
+    }).then(function (r) {
+      if (!r.ok) throw new Error('tts failed: ' + r.status);
+      return r.blob();
+    });
   }
 
-  function populateVoices() {
-    var all = window.speechSynthesis.getVoices();
-    koreanVoices = all.filter(function (v) { return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
-    if (!select) return;
-
-    if (koreanVoices.length <= 1) {
-      select.style.display = 'none';
+  function playNext() {
+    if (abort || chunkIndex >= chunks.length) {
+      resetBtn();
       return;
     }
+    var blobPromise = prefetch || fetchChunk(chunks[chunkIndex]);
+    prefetch = null;
 
-    select.innerHTML = '';
-    koreanVoices.forEach(function (v) {
-      var opt = document.createElement('option');
-      opt.value = v.name;
-      opt.textContent = v.name;
-      select.appendChild(opt);
-    });
-    var chosen = bestVoice();
-    if (chosen) select.value = chosen.name;
-    select.style.display = '';
+    blobPromise
+      .then(function (blob) {
+        if (abort) return;
+        chunkIndex += 1;
+        if (chunkIndex < chunks.length) {
+          prefetch = fetchChunk(chunks[chunkIndex]);
+        }
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.addEventListener('ended', playNext);
+        currentAudio.play();
+        btn.textContent = '⏹';
+        btn.disabled = false;
+        state = 'playing';
+      })
+      .catch(function () {
+        resetBtn();
+        alert('음성 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      });
   }
 
-  populateVoices();
-  if ('onvoiceschanged' in window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = populateVoices;
-  }
-
-  if (select) {
-    select.addEventListener('change', function () {
-      localStorage.setItem(STORAGE_KEY, select.value);
-    });
+  function stop() {
+    abort = true;
+    if (currentAudio) {
+      currentAudio.removeEventListener('ended', playNext);
+      currentAudio.pause();
+      currentAudio = null;
+    }
+    resetBtn();
   }
 
   btn.addEventListener('click', function () {
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
-      btn.textContent = '🔊';
-      btn.classList.remove('speaking');
+    if (state === 'playing') {
+      stop();
       return;
     }
 
-    var text = body.innerText || body.textContent || '';
-    if (!text.trim()) return;
+    var text = (body.innerText || body.textContent || '').trim();
+    if (!text) return;
 
-    var utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ko-KR';
-    var voice = select && select.value
-      ? koreanVoices.find(function (v) { return v.name === select.value; })
-      : bestVoice();
-    if (voice) utterance.voice = voice;
+    chunks = splitIntoChunks(text);
+    if (!chunks.length) return;
+    chunkIndex = 0;
+    prefetch = null;
+    abort = false;
 
-    utterance.onend = function () {
-      btn.textContent = '🔊';
-      btn.classList.remove('speaking');
-    };
-    utterance.onerror = function () {
-      btn.textContent = '🔊';
-      btn.classList.remove('speaking');
-    };
-
-    window.speechSynthesis.speak(utterance);
-    btn.textContent = '⏹';
-    btn.classList.add('speaking');
+    state = 'loading';
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    playNext();
   });
 
   window.addEventListener('beforeunload', function () {
-    window.speechSynthesis.cancel();
+    if (currentAudio) currentAudio.pause();
   });
 })();
