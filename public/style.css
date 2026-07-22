@@ -231,14 +231,13 @@ pre.hljs code { background: none; padding: 0; border-radius: 0; }
 .hljs-decorator, .hljs-meta { color: #3e999f; }
 .hljs-attr, .hljs-variable { color: #b58900; }
 
-a.wikilink { color: #0000cc; text-decoration: none; }
-a.wikilink:hover { text-decoration: underline; }
+a.wikilink { color: #0000cc; text-decoration: underline; }
 
 a.external-link { color: #006622; text-decoration: none; }
 a.external-link:hover { text-decoration: underline; }
 a.external-link::after { content: ' \2197'; }
 
-.foreign-word { color: #0000ff; }
+.foreign-word { color: #008000; }
 
 .quoted-text { color: #8b0000; }
 a.wikilink-new {
