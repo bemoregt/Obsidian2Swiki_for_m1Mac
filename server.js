@@ -237,24 +237,28 @@ app.post('/page/:name/core-function', async (req, res) => {
     if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
     const { body } = wiki.readPage(name);
-    const codes = await ollama.generateCoreFunctions(name, body.slice(0, 6000), CORE_FUNCTION_COUNT);
+    const functions = await ollama.generateCoreFunctions(name, body.slice(0, 6000), CORE_FUNCTION_COUNT);
 
     const funcName = (code) => {
       const m = code.match(/def\s+(\w+)\s*\(/);
       return m ? m[1] : null;
     };
-    const names = codes.map((code, i) => funcName(code) || `함수 ${i + 1}`);
-    const sections = codes
-      .map((code, i) => `### ${i + 1}. ${names[i]}\n\n\`\`\`python\n${code}\n\`\`\`\n`)
-      .join('\n');
+    const oneLine = (s) => s.replace(/\s+/g, ' ').trim();
+    const names = functions.map((f, i) => funcName(f.code) || `함수 ${i + 1}`);
+    const sections = functions
+      .map((f, i) => {
+        const desc = f.explanation ? `${oneLine(f.explanation)}\n\n` : '';
+        return `### ${i + 1}. ${names[i]}\n\n\`\`\`python\n${f.code}\n\`\`\`\n\n${desc}`;
+      })
+      .join('');
 
     const diagram = await ollama.generateFlowDiagram(name, body.slice(0, 6000), names);
     const flowSection = `### \u{1F5FA}️ 전체 흐름도\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n`;
 
-    const snippet = `\n## \u{1F9E9} 핵심 함수\n\n${sections}\n${flowSection}`;
+    const snippet = `\n## \u{1F9E9} 핵심 함수\n\n${sections}${flowSection}`;
     appendToPage(name, snippet);
 
-    res.json({ ok: true, codes, diagram });
+    res.json({ ok: true, functions, diagram });
   } catch (err) {
     console.error('[core-function] error', err);
     res.status(500).json({ error: err.message });
