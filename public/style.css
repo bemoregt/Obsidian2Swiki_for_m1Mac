@@ -129,29 +129,9 @@ a.file-link:hover { background: #eef; }
   background: #000;
 }
 
-.tts-bar {
+.imagegen-bar {
   margin-top: 20px;
   text-align: center;
-}
-.tts-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1px solid #999;
-  background: #eee;
-  font-size: 1.4em;
-  cursor: pointer;
-  line-height: 1;
-}
-.tts-btn:hover { background: #e0e0e0; }
-.tts-btn.speaking { background: #d6e6ff; border-color: #6699cc; }
-.tts-voice-select {
-  display: block;
-  margin: 8px auto 0;
-  font-family: inherit;
-  font-size: 0.85em;
-  padding: 3px 6px;
-  border: 1px solid #999;
 }
 
 .glossary-bar {

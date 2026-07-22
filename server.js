@@ -1,22 +1,14 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const http = require('http');
-const { spawn } = require('child_process');
 const multer = require('multer');
 const wiki = require('./lib/wiki');
 const ollama = require('./lib/ollama');
+const openai = require('./lib/openai');
 
 const app = express();
 
-const TTS_PORT = 5005;
-const ttsProcess = spawn(
-  path.join(__dirname, 'tts_env', 'bin', 'python3'),
-  [path.join(__dirname, 'tts', 'tts_server.py'), String(TTS_PORT)]
-);
-ttsProcess.stderr.on('data', (chunk) => process.stderr.write(`[tts] ${chunk}`));
-ttsProcess.on('exit', (code) => console.log(`[tts] process exited (${code})`));
-process.on('exit', () => ttsProcess.kill());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
@@ -87,31 +79,6 @@ app.get('/changes', (req, res) => {
 
 app.get('/help', (req, res) => {
   res.render('help', {});
-});
-
-app.post('/tts', express.text({ type: '*/*', limit: '200kb' }), (req, res) => {
-  const text = (req.body || '').trim();
-  if (!text) return res.status(400).end();
-
-  const body = Buffer.from(text, 'utf8');
-  const proxyReq = http.request(
-    {
-      hostname: '127.0.0.1',
-      port: TTS_PORT,
-      path: '/synthesize',
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': body.length },
-    },
-    (proxyRes) => {
-      res.writeHead(proxyRes.statusCode, { 'Content-Type': 'audio/wav' });
-      proxyRes.pipe(res);
-    }
-  );
-  proxyReq.on('error', (err) => {
-    console.error('[tts] proxy error', err.message);
-    res.status(503).json({ error: 'tts server not ready' });
-  });
-  proxyReq.end(body);
 });
 
 app.get('/search', (req, res) => {
@@ -205,6 +172,41 @@ app.post('/page/:name/glossarize', async (req, res) => {
     res.json({ ok: true, created, failed, linked: linkedTerms });
   } catch (err) {
     console.error('[glossarize] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "그림 생성": ask OpenAI to draw an image illustrating the current page's
+// content, save it into the vault's upload folder, and append it to the page.
+app.post('/page/:name/generate-image', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const plain = body
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<code>[\s\S]*?<\/code>/gi, ' ')
+      .replace(/[*!`#-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 800);
+    if (!plain) return res.status(400).json({ error: 'page has no content to illustrate' });
+
+    const prompt = `다음 문서 내용을 시각적으로 표현하는 그림을 그려줘 (글자나 텍스트는 넣지 말고, 개념을 상징하는 이미지 위주로): ${plain}`;
+    const imageBuffer = await openai.generateImage(prompt);
+
+    const filename = `${wiki.sanitizeName(name)}-ai-${Date.now()}.png`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), imageBuffer);
+    const url = `/uploads/${encodeURIComponent(filename)}`;
+
+    const trimmed = body.replace(/\s+$/, '');
+    const newBody = `${trimmed ? `${trimmed}\n\n` : ''}![${filename}](${url})\n`;
+    wiki.writePage(name, newBody);
+
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error('[generate-image] error', err);
     res.status(500).json({ error: err.message });
   }
 });

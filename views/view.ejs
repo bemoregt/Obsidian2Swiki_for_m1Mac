@@ -3,8 +3,9 @@
   <div class="page-body">
     <%- html %>
   </div>
-  <div class="tts-bar">
-    <button type="button" id="tts-btn" class="tts-btn" title="텍스트 읽어주기">🔊</button>
+  <div class="imagegen-bar">
+    <button type="button" id="imagegen-btn" class="btn">🖼️ 그림 생성</button>
+    <p class="side-hint" id="imagegen-status"></p>
   </div>
 
   <div class="glossary-bar">
@@ -24,6 +25,6 @@
     <a class="btn" id="up-btn" style="display:none"></a>
   </div>
   <script src="/static/nav.js"></script>
-  <script src="/static/tts.js"></script>
+  <script src="/static/imagegen.js"></script>
   <script src="/static/glossary.js"></script>
 <%- include('_footer') %>

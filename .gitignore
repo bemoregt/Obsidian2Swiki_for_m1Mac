@@ -3,3 +3,4 @@ tts_env/
 tts/cache/
 __pycache__/
 .DS_Store
+.env
