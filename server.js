@@ -53,17 +53,27 @@ const uploadStorage = multer.diskStorage({
     cb(null, candidate);
   },
 });
-const upload = multer({ storage: uploadStorage, limits: { fileSize: 500 * 1024 * 1024 } });
+const UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+const upload = multer({ storage: uploadStorage, limits: { fileSize: UPLOAD_MAX_BYTES } });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'no file uploaded' });
-  const isImage = /^image\//.test(req.file.mimetype);
-  res.json({
-    url: `/uploads/${encodeURIComponent(req.file.filename)}`,
-    filename: req.file.filename,
-    isImage,
+app.post('/upload', (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: `파일이 너무 큽니다 (최대 ${UPLOAD_MAX_BYTES / (1024 * 1024)}MB)` });
+      }
+      console.error(err);
+      return res.status(400).json({ error: '업로드 실패' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'no file uploaded' });
+    const isImage = /^image\//.test(req.file.mimetype);
+    res.json({
+      url: `/uploads/${encodeURIComponent(req.file.filename)}`,
+      filename: req.file.filename,
+      isImage,
+    });
   });
 });
 
