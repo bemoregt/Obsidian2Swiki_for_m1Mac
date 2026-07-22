@@ -1,6 +1,6 @@
 <%- include('_header', { name, mode: 'edit' }) %>
-  <h1 class="page-name">편집: <%= name %></h1>
   <form id="edit-form" method="post" action="/page/<%= encodeURIComponent(name) %>">
+    <input type="text" id="title-input" name="title" class="title-input" value="<%= name %>" placeholder="페이지 제목" autocomplete="off">
     <div class="tagbar">
       <button type="button" data-wrap="*" title="위키 링크 (새 페이지는 자동 생성)">*링크*</button>
       <button type="button" data-wrap="!" title="강조">!강조!</button>

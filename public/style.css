@@ -47,6 +47,22 @@ body {
   margin: 0 0 16px;
   padding-bottom: 8px;
 }
+.title-input {
+  display: block;
+  width: 100%;
+  font-family: inherit;
+  font-size: 1.4em;
+  font-weight: bold;
+  border: none;
+  border-bottom: 1px solid #ddd;
+  margin: 0 0 16px;
+  padding: 0 0 8px;
+  background: transparent;
+}
+.title-input:focus {
+  outline: none;
+  border-bottom-color: #6699cc;
+}
 .page-mode-actions {
   display: flex;
   flex-direction: column;

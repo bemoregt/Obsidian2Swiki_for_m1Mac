@@ -20,7 +20,14 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.use('/static', express.static(path.join(__dirname, 'public')));
+app.use(
+  '/static',
+  express.static(path.join(__dirname, 'public'), {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => res.set('Cache-Control', 'no-store'),
+  })
+);
 
 const PORT = process.env.PORT || 3000;
 
@@ -134,7 +141,15 @@ app.get('/page/:name/edit', (req, res) => {
 app.post('/page/:name', (req, res) => {
   const { name } = req.params;
   wiki.writePage(name, req.body.body || '');
-  res.redirect(`/page/${encodeURIComponent(name)}`);
+
+  let finalName = name;
+  const newTitle = (req.body.title || '').trim();
+  if (newTitle && newTitle !== name) {
+    wiki.renamePage(name, newTitle);
+    finalName = newTitle;
+  }
+
+  res.redirect(`/page/${encodeURIComponent(finalName)}`);
 });
 
 // Used by the sidebar file upload widget when viewing (not editing) a page -
