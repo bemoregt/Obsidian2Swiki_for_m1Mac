@@ -188,6 +188,11 @@ a.file-link:hover { background: #eef; }
   gap: 8px;
 }
 
+.video-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
 .page-footer-nav {
   margin-top: 24px;
   padding-top: 12px;

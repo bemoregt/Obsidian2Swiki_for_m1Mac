@@ -1,11 +1,13 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const http = require('http');
 const { spawn } = require('child_process');
 const multer = require('multer');
 const wiki = require('./lib/wiki');
 const ollama = require('./lib/ollama');
+const video = require('./lib/video');
 
 const app = express();
 
@@ -216,6 +218,59 @@ app.post('/page/:name/glossarize', async (req, res) => {
   } catch (err) {
     console.error('[glossarize] error', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// "유튜브 영상 만들기": if the page links to an uploaded audio file and an
+// uploaded PDF, renders the PDF's pages as an equal-time slideshow muxed with
+// the audio, asks Ollama for a title/description, and appends both to the page.
+app.post('/page/:name/make-video', async (req, res) => {
+  const { name } = req.params;
+  if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+  const { body } = wiki.readPage(name);
+  const { audio, pdf } = video.findAudioAndPdf(body, UPLOAD_DIR);
+  if (!audio || !pdf) {
+    return res.status(400).json({
+      error: '이 문서에서 오디오 파일과 PDF 파일을 모두 찾지 못했습니다. 두 파일을 먼저 업로드해서 문서에 링크해주세요.',
+    });
+  }
+
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-video-'));
+  try {
+    const [duration, images, pdfTextContent] = await Promise.all([
+      video.getAudioDuration(audio.abs),
+      video.pdfToImages(pdf.abs, workDir),
+      video.pdfText(pdf.abs),
+    ]);
+    if (!images.length) throw new Error('PDF에서 이미지를 추출하지 못했습니다.');
+
+    const outFilename = `${wiki.sanitizeName(name)}-youtube-${Date.now()}.mp4`;
+    const outPath = path.join(UPLOAD_DIR, outFilename);
+    await video.buildSlideshow({ images, audioPath: audio.abs, duration, outPath });
+
+    const meta = await ollama.generateYoutubeMeta(name, `${body}\n\n${pdfTextContent}`.slice(0, 6000));
+    const oneLine = (s) => s.replace(/\s+/g, ' ').trim();
+
+    // Single `*` is this wiki's wikilink syntax, so plain "- label: value"
+    // list lines are used here instead of `**bold**` (unsupported, and would
+    // misparse as a link). Each value is flattened to one line since list
+    // items don't continue across newlines.
+    const snippet =
+      `\n## 🎬 유튜브 영상\n\n` +
+      `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})\n\n` +
+      `- 제목: ${oneLine(meta.title)}\n` +
+      `- 설명: ${oneLine(meta.description)}\n`;
+
+    const current = wiki.readPage(name).body;
+    wiki.writePage(name, `${current.replace(/\s+$/, '')}\n${snippet}`);
+
+    res.json({ ok: true, videoUrl: `/uploads/${encodeURIComponent(outFilename)}`, title: meta.title, description: meta.description });
+  } catch (err) {
+    console.error('[make-video] error', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 });
 
