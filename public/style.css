@@ -199,6 +199,11 @@ a.file-link:hover { background: #eef; }
   gap: 8px;
 }
 
+.corefunc-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
 .page-footer-nav {
   margin-top: 24px;
   padding-top: 12px;
@@ -226,6 +231,16 @@ pre.hljs {
   line-height: 1.5;
 }
 pre.hljs code { background: none; padding: 0; border-radius: 0; }
+
+pre.mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  padding: 10px;
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+}
 
 .hljs-keyword, .hljs-selector-tag, .hljs-title.class_ { color: #8959a8; font-weight: bold; }
 .hljs-string, .hljs-doctag { color: #718c00; }

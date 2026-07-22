@@ -23,6 +23,11 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+// Vendored third-party libraries (e.g. mermaid.js) don't change on every
+// edit like the hand-written files below, so they get normal HTTP caching
+// instead of the no-store policy - otherwise the browser would re-download
+// several MB of it on every single page view.
+app.use('/static/vendor', express.static(path.join(__dirname, 'public', 'vendor')));
 app.use(
   '/static',
   express.static(path.join(__dirname, 'public'), {
@@ -217,6 +222,41 @@ app.post('/page/:name/glossarize', async (req, res) => {
     res.json({ ok: true, created, failed, linked: linkedTerms });
   } catch (err) {
     console.error('[glossarize] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const CORE_FUNCTION_COUNT = 3;
+
+// "핵심 함수 만들기": asks Ollama to split the page's algorithm into exactly
+// 3 fully-implemented functions, then draws a flowchart of the whole with
+// those 3 steps highlighted.
+app.post('/page/:name/core-function', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const codes = await ollama.generateCoreFunctions(name, body.slice(0, 6000), CORE_FUNCTION_COUNT);
+
+    const funcName = (code) => {
+      const m = code.match(/def\s+(\w+)\s*\(/);
+      return m ? m[1] : null;
+    };
+    const names = codes.map((code, i) => funcName(code) || `함수 ${i + 1}`);
+    const sections = codes
+      .map((code, i) => `### ${i + 1}. ${names[i]}\n\n\`\`\`python\n${code}\n\`\`\`\n`)
+      .join('\n');
+
+    const diagram = await ollama.generateFlowDiagram(name, body.slice(0, 6000), names);
+    const flowSection = `### \u{1F5FA}️ 전체 흐름도\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n`;
+
+    const snippet = `\n## \u{1F9E9} 핵심 함수\n\n${sections}\n${flowSection}`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, codes, diagram });
+  } catch (err) {
+    console.error('[core-function] error', err);
     res.status(500).json({ error: err.message });
   }
 });
