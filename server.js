@@ -5,6 +5,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const multer = require('multer');
 const wiki = require('./lib/wiki');
+const ollama = require('./lib/ollama');
 
 const app = express();
 
@@ -164,6 +165,43 @@ app.post('/page/:name/append', (req, res) => {
   const newBody = `${trimmed ? `${trimmed}\n\n` : ''}${snippet}\n`;
   wiki.writePage(name, newBody);
   res.json({ ok: true });
+});
+
+// "전문용어 페이지 만들기": for each selected foreign-word term, generate a
+// short definition with a local Ollama (cloud) model if the term doesn't
+// already have a page, then wrap its first occurrence in *term* link syntax.
+app.post('/page/:name/glossarize', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const terms = Array.isArray(req.body.terms)
+      ? req.body.terms.filter((t) => typeof t === 'string' && t.trim())
+      : [];
+    if (!terms.length) return res.status(400).json({ error: 'no terms' });
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const created = [];
+    const failed = [];
+    for (const term of terms) {
+      if (wiki.pageExists(term)) continue;
+      try {
+        const definition = await ollama.defineTerm(term);
+        wiki.writePage(term, definition || `(자동 설명 생성 실패: ${term})`);
+        created.push(term);
+      } catch (err) {
+        console.error('[glossarize] failed for', term, err.message);
+        failed.push(term);
+      }
+    }
+
+    const current = wiki.readPage(name).body;
+    const { body: linkedBody, linkedTerms } = wiki.linkTermsInBody(current, terms);
+    wiki.writePage(name, linkedBody);
+
+    res.json({ ok: true, created, failed, linked: linkedTerms });
+  } catch (err) {
+    console.error('[glossarize] error', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/new/:name', (req, res) => {

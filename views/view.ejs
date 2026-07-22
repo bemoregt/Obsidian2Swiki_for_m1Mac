@@ -6,9 +6,24 @@
   <div class="tts-bar">
     <button type="button" id="tts-btn" class="tts-btn" title="텍스트 읽어주기">🔊</button>
   </div>
+
+  <div class="glossary-bar">
+    <button type="button" id="glossary-btn" class="btn">🏷️ 전문용어 페이지 만들기</button>
+  </div>
+  <div id="glossary-panel" class="glossary-panel" style="display:none">
+    <p class="glossary-hint">체크된 단어에 대해 새 페이지를 만들고(AI가 짧은 설명을 채워넣습니다), 이 문서에서 링크로 연결합니다.</p>
+    <div id="glossary-list" class="glossary-list"></div>
+    <div class="glossary-actions">
+      <button type="button" id="glossary-generate" class="btn primary">생성</button>
+      <button type="button" id="glossary-cancel" class="btn">취소</button>
+    </div>
+    <p class="side-hint" id="glossary-status"></p>
+  </div>
+
   <div class="page-footer-nav">
     <a class="btn" id="up-btn" style="display:none"></a>
   </div>
   <script src="/static/nav.js"></script>
   <script src="/static/tts.js"></script>
+  <script src="/static/glossary.js"></script>
 <%- include('_footer') %>

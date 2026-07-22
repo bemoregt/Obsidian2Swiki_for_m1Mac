@@ -140,6 +140,40 @@ a.file-link:hover { background: #eef; }
   border: 1px solid #999;
 }
 
+.glossary-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+.glossary-panel {
+  margin: 12px auto 0;
+  max-width: 480px;
+  border: 1px solid #ccc;
+  background: #f7f6f0;
+  padding: 12px;
+}
+.glossary-hint {
+  margin: 0 0 8px;
+  font-size: 0.9em;
+  color: #555;
+}
+.glossary-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+.glossary-item {
+  display: block;
+  padding: 2px 0;
+  font-size: 0.95em;
+}
+.glossary-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .page-footer-nav {
   margin-top: 24px;
   padding-top: 12px;

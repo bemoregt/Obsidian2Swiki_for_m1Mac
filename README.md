@@ -25,6 +25,7 @@ Obsidian 볼트(vault)를 그대로 데이터 저장소로 쓰는, 옛날 Squeak
   - Apple Silicon GPU(MPS) 가속 + 문장 단위 스트리밍 재생으로 첫 문장은 약 1초 내에 재생 시작
   - 동일 문장은 디스크 캐시로 즉시 재생
   - 차분하게 읽도록 톤(피치/속도 변동폭) 튜닝 적용
+- **전문용어 페이지 만들기**: 보기 화면 하단 🏷️ 버튼 — 파란색으로 강조된 외국어/전문용어 중 원하는 것을 체크하면, 로컬 Ollama(`gemma4:cloud`) 모델이 짧은 설명을 생성해 새 페이지로 만들고 현재 문서에서 링크로 연결함
 
 ## 실행 방법
 
@@ -50,8 +51,15 @@ deactivate
 VAULT_PATH="/path/to/your/vault" PORT=3000 npm start
 ```
 
+전문용어 페이지 만들기 기능은 [Ollama](https://ollama.com)가 로컬에서 실행 중이어야 하고, 기본값은 `gemma4:cloud` 모델(Ollama 클라우드, 로그인 필요)입니다. 다른 모델을 쓰려면:
+
+```bash
+OLLAMA_HOST="http://localhost:11434" OLLAMA_MODEL="다른모델명" npm start
+```
+
 ## 요구 사항
 
 - Node.js
 - Python 3 (TTS 서버용, `tts_env` 가상환경)
+- Ollama (전문용어 페이지 자동 생성 기능용, `gemma4:cloud` 등 모델 설치 필요)
 - 로컬 Obsidian 볼트 (일반 `.md` 파일 폴더)
