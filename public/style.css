@@ -192,6 +192,12 @@ a.file-link:hover { background: #eef; }
   margin-top: 12px;
   text-align: center;
 }
+.video-bar-buttons {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .page-footer-nav {
   margin-top: 24px;

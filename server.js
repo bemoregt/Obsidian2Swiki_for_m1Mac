@@ -221,6 +221,39 @@ app.post('/page/:name/glossarize', async (req, res) => {
   }
 });
 
+const SHORTS_MAX_SECONDS = 180;
+
+// Shared by /make-video and /make-shorts: locates the page's linked audio +
+// PDF, renders the PDF to page images, and reads the audio duration. Caller
+// is responsible for removing the returned workDir.
+async function prepareSlideSource(name) {
+  const { body } = wiki.readPage(name);
+  const { audio, pdf } = video.findAudioAndPdf(body, UPLOAD_DIR);
+  if (!audio || !pdf) {
+    const err = new Error('이 문서에서 오디오 파일과 PDF 파일을 모두 찾지 못했습니다. 두 파일을 먼저 업로드해서 문서에 링크해주세요.');
+    err.status = 400;
+    throw err;
+  }
+
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-video-'));
+  const [duration, images, pdfTextContent] = await Promise.all([
+    video.getAudioDuration(audio.abs),
+    video.pdfToImages(pdf.abs, workDir),
+    video.pdfText(pdf.abs),
+  ]);
+  if (!images.length) {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    throw new Error('PDF에서 이미지를 추출하지 못했습니다.');
+  }
+
+  return { body, audio, pdf, workDir, duration, images, pdfTextContent };
+}
+
+function appendToPage(name, snippet) {
+  const current = wiki.readPage(name).body;
+  wiki.writePage(name, `${current.replace(/\s+$/, '')}\n${snippet}`);
+}
+
 // "유튜브 영상 만들기": if the page links to an uploaded audio file and an
 // uploaded PDF, renders the PDF's pages as an equal-time slideshow muxed with
 // the audio, asks Ollama for a title/description, and appends both to the page.
@@ -228,23 +261,15 @@ app.post('/page/:name/make-video', async (req, res) => {
   const { name } = req.params;
   if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
-  const { body } = wiki.readPage(name);
-  const { audio, pdf } = video.findAudioAndPdf(body, UPLOAD_DIR);
-  if (!audio || !pdf) {
-    return res.status(400).json({
-      error: '이 문서에서 오디오 파일과 PDF 파일을 모두 찾지 못했습니다. 두 파일을 먼저 업로드해서 문서에 링크해주세요.',
-    });
+  let source;
+  try {
+    source = await prepareSlideSource(name);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
   }
 
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-video-'));
   try {
-    const [duration, images, pdfTextContent] = await Promise.all([
-      video.getAudioDuration(audio.abs),
-      video.pdfToImages(pdf.abs, workDir),
-      video.pdfText(pdf.abs),
-    ]);
-    if (!images.length) throw new Error('PDF에서 이미지를 추출하지 못했습니다.');
-
+    const { body, audio, duration, images, pdfTextContent } = source;
     const outFilename = `${wiki.sanitizeName(name)}-youtube-${Date.now()}.mp4`;
     const outPath = path.join(UPLOAD_DIR, outFilename);
     await video.buildSlideshow({ images, audioPath: audio.abs, duration, outPath });
@@ -261,16 +286,54 @@ app.post('/page/:name/make-video', async (req, res) => {
       `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})\n\n` +
       `- 제목: ${oneLine(meta.title)}\n` +
       `- 설명: ${oneLine(meta.description)}\n`;
-
-    const current = wiki.readPage(name).body;
-    wiki.writePage(name, `${current.replace(/\s+$/, '')}\n${snippet}`);
+    appendToPage(name, snippet);
 
     res.json({ ok: true, videoUrl: `/uploads/${encodeURIComponent(outFilename)}`, title: meta.title, description: meta.description });
   } catch (err) {
     console.error('[make-video] error', err);
     res.status(500).json({ error: err.message });
   } finally {
-    fs.rmSync(workDir, { recursive: true, force: true });
+    fs.rmSync(source.workDir, { recursive: true, force: true });
+  }
+});
+
+// "쇼츠 영상 만들기": same source (audio + PDF slideshow) as the YouTube
+// video, but cropped to the first 3 minutes and rendered in a black-background
+// portrait (1080x1920) frame for YouTube Shorts.
+app.post('/page/:name/make-shorts', async (req, res) => {
+  const { name } = req.params;
+  if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+  let source;
+  try {
+    source = await prepareSlideSource(name);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+
+  try {
+    const { audio, duration, images } = source;
+    const outFilename = `${wiki.sanitizeName(name)}-shorts-${Date.now()}.mp4`;
+    const outPath = path.join(UPLOAD_DIR, outFilename);
+    await video.buildSlideshow({
+      images,
+      audioPath: audio.abs,
+      duration,
+      outPath,
+      width: 1080,
+      height: 1920,
+      maxDuration: SHORTS_MAX_SECONDS,
+    });
+
+    const snippet = `\n## 📱 쇼츠 영상\n\n[${outFilename}](/uploads/${encodeURIComponent(outFilename)})\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, videoUrl: `/uploads/${encodeURIComponent(outFilename)}` });
+  } catch (err) {
+    console.error('[make-shorts] error', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.rmSync(source.workDir, { recursive: true, force: true });
   }
 });
 
