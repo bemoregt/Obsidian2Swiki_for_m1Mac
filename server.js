@@ -76,6 +76,11 @@ app.get('/pages', (req, res) => {
   res.render('list', { pages: wiki.listPages() });
 });
 
+// Used by the glossary button to skip terms that already have a page.
+app.get('/api/pages', (req, res) => {
+  res.json({ pages: wiki.listPages() });
+});
+
 app.get('/changes', (req, res) => {
   res.render('changes', { pages: wiki.listPagesWithMtime() });
 });

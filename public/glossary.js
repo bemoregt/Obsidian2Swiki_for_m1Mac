@@ -77,28 +77,48 @@
   }
 
   btn.addEventListener('click', function () {
-    var terms = collectTerms();
-    if (!terms.length) {
-      panel.style.display = '';
-      list.innerHTML = '<p class="glossary-hint">이 페이지에는 전문용어로 보이는 파란색 단어가 없습니다.</p>';
-      generateBtn.style.display = 'none';
-      return;
-    }
-    generateBtn.style.display = '';
-    list.innerHTML = '';
-    terms.forEach(function (term) {
-      var label = document.createElement('label');
-      label.className = 'glossary-item';
-      var checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = term;
-      checkbox.checked = true;
-      label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(' ' + term));
-      list.appendChild(label);
-    });
-    setStatus('');
     panel.style.display = '';
+    list.innerHTML = '<p class="glossary-hint">기존 페이지 목록을 확인하는 중...</p>';
+    generateBtn.style.display = 'none';
+
+    fetch('/api/pages')
+      .then(function (r) {
+        if (!r.ok) throw new Error('failed to load page list');
+        return r.json();
+      })
+      .then(function (data) {
+        var existing = {};
+        (data.pages || []).forEach(function (name) {
+          existing[name] = true;
+        });
+
+        var terms = collectTerms().filter(function (term) {
+          return !existing[term];
+        });
+
+        if (!terms.length) {
+          list.innerHTML = '<p class="glossary-hint">새로 만들 전문용어가 없습니다 (이미 페이지가 있거나, 파란색 단어가 없습니다).</p>';
+          return;
+        }
+
+        generateBtn.style.display = '';
+        list.innerHTML = '';
+        terms.forEach(function (term) {
+          var label = document.createElement('label');
+          label.className = 'glossary-item';
+          var checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = term;
+          checkbox.checked = true;
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(' ' + term));
+          list.appendChild(label);
+        });
+        setStatus('');
+      })
+      .catch(function () {
+        list.innerHTML = '<p class="glossary-hint">기존 페이지 목록을 불러오지 못했습니다.</p>';
+      });
   });
 
   cancelBtn.addEventListener('click', function () {
