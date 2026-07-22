@@ -15,6 +15,22 @@
     return true;
   }
 
+  function currentViewPageName() {
+    var m = location.pathname.match(/^\/page\/([^/]+)$/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  function appendToCurrentPage(pageName, snippet) {
+    return fetch('/page/' + encodeURIComponent(pageName) + '/append', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snippet: snippet }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error('append failed');
+      return r.json();
+    });
+  }
+
   function uploadFile(file, cursorStart, cursorEnd) {
     var formData = new FormData();
     formData.append('file', file);
@@ -32,9 +48,18 @@
 
         if (insertSnippetAtCursor(snippet, cursorStart, cursorEnd)) {
           setStatus('업로드 완료: ' + data.filename);
-        } else {
-          setStatus('업로드 완료 (편집 모드에서 커서 위치에 삽입됩니다): ' + data.filename);
+          return;
         }
+
+        var pageName = currentViewPageName();
+        if (pageName) {
+          setStatus('업로드 완료, 문서 끝에 추가 중...');
+          return appendToCurrentPage(pageName, snippet).then(function () {
+            location.reload();
+          });
+        }
+
+        setStatus('업로드 완료 (문서 보기/편집 화면에서 다시 시도해주세요): ' + data.filename);
       })
       .catch(function () {
         setStatus('업로드 실패');

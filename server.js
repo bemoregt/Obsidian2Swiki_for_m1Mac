@@ -19,6 +19,7 @@ process.on('exit', () => ttsProcess.kill());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
@@ -29,7 +30,10 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const uploadStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
-    const original = path.basename(file.originalname).replace(/[/\\]/g, '_');
+    // Busboy decodes multipart filenames as latin1 by default, but browsers
+    // actually send them as raw UTF-8 bytes - re-decode to undo the mojibake.
+    const utf8Name = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const original = path.basename(utf8Name).replace(/[/\\]/g, '_');
     const ext = path.extname(original);
     const base = path.basename(original, ext) || 'file';
     let candidate = original;
@@ -41,7 +45,7 @@ const uploadStorage = multer.diskStorage({
     cb(null, candidate);
   },
 });
-const upload = multer({ storage: uploadStorage, limits: { fileSize: 25 * 1024 * 1024 } });
+const upload = multer({ storage: uploadStorage, limits: { fileSize: 500 * 1024 * 1024 } });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
@@ -131,6 +135,20 @@ app.post('/page/:name', (req, res) => {
   const { name } = req.params;
   wiki.writePage(name, req.body.body || '');
   res.redirect(`/page/${encodeURIComponent(name)}`);
+});
+
+// Used by the sidebar file upload widget when viewing (not editing) a page -
+// there's no cursor to insert at, so the snippet goes at the very end.
+app.post('/page/:name/append', (req, res) => {
+  const { name } = req.params;
+  const snippet = (req.body && req.body.snippet) || '';
+  if (!snippet.trim()) return res.status(400).json({ error: 'no snippet' });
+
+  const current = wiki.pageExists(name) ? wiki.readPage(name).body : '';
+  const trimmed = current.replace(/\s+$/, '');
+  const newBody = `${trimmed ? `${trimmed}\n\n` : ''}${snippet}\n`;
+  wiki.writePage(name, newBody);
+  res.json({ ok: true });
 });
 
 app.get('/new/:name', (req, res) => {
