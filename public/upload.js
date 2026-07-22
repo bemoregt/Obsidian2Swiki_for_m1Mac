@@ -38,8 +38,10 @@
 
     return fetch('/upload', { method: 'POST', body: formData })
       .then(function (r) {
-        if (!r.ok) throw new Error('upload failed');
-        return r.json();
+        return r.json().catch(function () { return {}; }).then(function (data) {
+          if (!r.ok) throw new Error(data.error || '업로드 실패');
+          return data;
+        });
       })
       .then(function (data) {
         var snippet = data.isImage
@@ -61,8 +63,8 @@
 
         setStatus('업로드 완료 (문서 보기/편집 화면에서 다시 시도해주세요): ' + data.filename);
       })
-      .catch(function () {
-        setStatus('업로드 실패');
+      .catch(function (err) {
+        setStatus(err.message || '업로드 실패');
       });
   }
 
