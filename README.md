@@ -26,6 +26,9 @@ Obsidian 볼트(vault)를 그대로 데이터 저장소로 쓰는, 옛날 Squeak
   - 동일 문장은 디스크 캐시로 즉시 재생
   - 차분하게 읽도록 톤(피치/속도 변동폭) 튜닝 적용
 - **전문용어 페이지 만들기**: 보기 화면 하단 🏷️ 버튼 — 초록색으로 강조된 외국어/전문용어 중 원하는 것을 체크하면, 로컬 Ollama(`gemma4:cloud`) 모델이 짧은 설명을 생성해 새 페이지로 만들고 현재 문서에서 링크로 연결함
+- **유튜브 영상 만들기**: 보기 화면 하단 🎬 버튼 — 문서에 업로드된 오디오 파일과 PDF 파일이 함께 링크되어 있으면, PDF의 각 페이지를 이미지로 변환해 오디오 길이에 맞춰 균등하게 배분한 슬라이드쇼(1920x1080 mp4)를 만들고, 로컬 Ollama(`gemma4:cloud`)가 문서 내용을 바탕으로 유튜브용 제목/설명을 생성해 영상과 함께 문서 하단에 자동 삽입
+- **쇼츠 영상 만들기**: 🎬 버튼 옆 📱 버튼 — 같은 오디오+PDF 소스를 처음 3분만 잘라, 세로(1080x1920) 검은 배경 영상으로 만들어 문서 하단에 자동 삽입
+- **핵심 함수 만들기**: 보기 화면 하단 🧩 버튼 — 문서가 설명하는 알고리즘/개념을 로컬 Ollama(`gemma4:cloud`)가 실제로 동작하는 파이썬 함수 정확히 3개로 나눠 구현(뼈대나 `pass`가 아니라 설명된 내용을 전부 구현)하고, 각 함수 코드 밑에 한 줄 설명을 붙임. 이어서 전체 알고리즘의 실행 순서를 Mermaid 플로우차트로 그리고 그 3개 함수가 호출되는 단계를 색으로 강조 표시함 (mermaid.js는 로컬에 내장되어 완전히 오프라인으로 렌더링)
 
 ## 실행 방법
 
@@ -51,7 +54,7 @@ deactivate
 VAULT_PATH="/path/to/your/vault" PORT=3000 npm start
 ```
 
-전문용어 페이지 만들기 기능은 [Ollama](https://ollama.com)가 로컬에서 실행 중이어야 하고, 기본값은 `gemma4:cloud` 모델(Ollama 클라우드, 로그인 필요)입니다. 다른 모델을 쓰려면:
+전문용어 페이지 만들기 / 유튜브·쇼츠 제목·설명 생성 / 핵심 함수·흐름도 만들기 기능은 모두 [Ollama](https://ollama.com)가 로컬에서 실행 중이어야 하고, 기본값은 `gemma4:cloud` 모델(Ollama 클라우드, 로그인 필요)입니다. 다른 모델을 쓰려면:
 
 ```bash
 OLLAMA_HOST="http://localhost:11434" OLLAMA_MODEL="다른모델명" npm start
@@ -61,5 +64,6 @@ OLLAMA_HOST="http://localhost:11434" OLLAMA_MODEL="다른모델명" npm start
 
 - Node.js
 - Python 3 (TTS 서버용, `tts_env` 가상환경)
-- Ollama (전문용어 페이지 자동 생성 기능용, `gemma4:cloud` 등 모델 설치 필요)
+- Ollama (전문용어 페이지/유튜브·쇼츠 제목·설명/핵심 함수·흐름도 자동 생성 기능용, `gemma4:cloud` 등 모델 설치 필요)
+- `ffmpeg`, `poppler-utils`(`pdftoppm`, `pdftotext`) — 유튜브/쇼츠 영상 생성 기능용 (Ubuntu: `sudo apt install ffmpeg poppler-utils`, macOS: `brew install ffmpeg poppler`)
 - 로컬 Obsidian 볼트 (일반 `.md` 파일 폴더)
