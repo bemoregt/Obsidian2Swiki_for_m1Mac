@@ -115,6 +115,20 @@ a.file-link {
 }
 a.file-link:hover { background: #eef; }
 
+.wiki-audio {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  margin: 12px 0;
+}
+.wiki-video {
+  display: block;
+  max-width: 100%;
+  margin: 12px 0;
+  border: 1px solid #ccc;
+  background: #000;
+}
+
 .tts-bar {
   margin-top: 20px;
   text-align: center;
