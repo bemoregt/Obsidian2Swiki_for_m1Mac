@@ -19,53 +19,62 @@
     } catch (e) {}
   }
 
-  // Clicking a link inside the page content is "going forward": remember the
-  // page we're leaving so the destination can offer a way back to it. This is
-  // a real stack (not a per-target "last parent" map), so A <-> B mutual
-  // links can't turn the up-button into an infinite ping-pong loop - each
-  // hop is pushed once and only popped when actually followed back.
-  if (currentName) {
-    document
-      .querySelectorAll('.page-body a.wikilink, .page-body a.wikilink-new, table.calendar td a')
-      .forEach(function (a) {
-        a.addEventListener('click', function () {
-          var m = a.getAttribute('href').match(/^\/(?:page|new)\/([^/?]+)/);
-          if (!m) return;
-          var targetName = decodeURIComponent(m[1]);
-          if (targetName === currentName) return;
-          var stack = getStack();
-          stack.push(currentName);
-          setStack(stack);
-        });
-      });
+  function pushCurrent() {
+    if (!currentName) return;
+    var stack = getStack();
+    stack.push(currentName);
+    setStack(stack);
   }
 
-  // Any other navigation (sidebar history/all-pages/help/brand) leaves the
-  // current trail behind - start fresh rather than showing a stale "up".
-  // Edit/view-mode switching for the SAME page is exempt: that round trip is
-  // exactly what the stack needs to survive.
-  document.querySelectorAll('.sidebar a').forEach(function (a) {
-    if (a.closest('.page-mode-actions')) return;
+  // Leaving this page - whether by clicking a wiki-link/calendar day inside
+  // the content, or by using a sidebar tool (히스토리/모든 페이지/검색/도움말) -
+  // remembers this page so whatever page you land on can offer a way back to
+  // it. This is a real stack (not a per-target "last parent" map), so A <-> B
+  // mutual links can't turn the up-button into an infinite ping-pong loop -
+  // each hop is pushed once and only popped when actually followed back.
+  // Edit/view-mode switching for the SAME page is exempt: that round trip
+  // must not push this page as its own parent.
+  document.querySelectorAll('.page-body a.wikilink, .page-body a.wikilink-new, table.calendar td a').forEach(function (a) {
     a.addEventListener('click', function () {
-      setStack([]);
+      var m = a.getAttribute('href').match(/^\/(?:page|new)\/([^/?]+)/);
+      if (!m) return;
+      var targetName = decodeURIComponent(m[1]);
+      if (targetName === currentName) return;
+      pushCurrent();
     });
   });
+
+  document.querySelectorAll('.sidebar a').forEach(function (a) {
+    if (a.closest('.page-mode-actions')) return;
+    a.addEventListener('click', pushCurrent);
+  });
+
+  var searchForm = document.querySelector('.side-section form[action="/search"]');
+  if (searchForm) searchForm.addEventListener('submit', pushCurrent);
+
+  // Fallback for when sessionStorage has nothing (e.g. opened in a new tab):
+  // only a genuine wiki-page referrer counts as a parent page.
+  function parentFromReferrer() {
+    if (!document.referrer) return null;
+    try {
+      var ref = new URL(document.referrer);
+      if (ref.origin !== location.origin) return null;
+      var pageMatch = ref.pathname.match(/^\/page\/([^/]+)$/);
+      if (!pageMatch) return null;
+      var name = decodeURIComponent(pageMatch[1]);
+      return name === currentName ? null : name;
+    } catch (e) {
+      return null;
+    }
+  }
 
   var upBtn = document.getElementById('up-btn');
   if (!upBtn || !currentName) return;
 
   var stack = getStack();
   var parentName = stack.length ? stack[stack.length - 1] : null;
-
-  if (!parentName && document.referrer) {
-    try {
-      var ref = new URL(document.referrer);
-      if (ref.origin === location.origin) {
-        var refMatch = ref.pathname.match(/^\/page\/([^/]+)$/);
-        if (refMatch) parentName = decodeURIComponent(refMatch[1]);
-      }
-    } catch (e) {}
-  }
+  var poppable = Boolean(parentName && parentName !== currentName);
+  if (!poppable) parentName = parentFromReferrer();
 
   if (!parentName || parentName === currentName) return;
 
@@ -73,6 +82,7 @@
   upBtn.textContent = '↑ 상위 페이지 보기: ' + parentName;
   upBtn.style.display = '';
   upBtn.addEventListener('click', function () {
+    if (!poppable) return;
     // Consume this hop so the trail doesn't dangle behind after going back.
     var s = getStack();
     s.pop();
