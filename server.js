@@ -6,7 +6,6 @@ const os = require('os');
 const multer = require('multer');
 const wiki = require('./lib/wiki');
 const ollama = require('./lib/ollama');
-const openai = require('./lib/openai');
 const video = require('./lib/video');
 
 const app = express();
@@ -189,39 +188,6 @@ app.post('/page/:name/glossarize', async (req, res) => {
     res.json({ ok: true, created, failed, linked: linkedTerms });
   } catch (err) {
     console.error('[glossarize] error', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// "그림 생성": ask OpenAI to draw an image illustrating the current page's
-// content, save it into the vault's upload folder, and append it to the page.
-app.post('/page/:name/generate-image', async (req, res) => {
-  try {
-    const { name } = req.params;
-    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
-
-    const { body } = wiki.readPage(name);
-    const plain = body
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/<code>[\s\S]*?<\/code>/gi, ' ')
-      .replace(/[*!`#-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 800);
-    if (!plain) return res.status(400).json({ error: 'page has no content to illustrate' });
-
-    const prompt = `다음 문서 내용을 시각적으로 표현하는 그림을 그려줘 (글자나 텍스트는 넣지 말고, 개념을 상징하는 이미지 위주로): ${plain}`;
-    const imageBuffer = await openai.generateImage(prompt);
-
-    const filename = `${wiki.sanitizeName(name)}-ai-${Date.now()}.png`;
-    fs.writeFileSync(path.join(UPLOAD_DIR, filename), imageBuffer);
-    const url = `/uploads/${encodeURIComponent(filename)}`;
-
-    appendToPage(name, `\n![${filename}](${url})`);
-
-    res.json({ ok: true, url });
-  } catch (err) {
-    console.error('[generate-image] error', err);
     res.status(500).json({ error: err.message });
   }
 });
