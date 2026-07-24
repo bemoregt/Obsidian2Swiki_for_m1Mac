@@ -12,8 +12,8 @@
       position: fixed;
       z-index: 10;
       font-family: "SFMono-Regular", Menlo, monospace;
-      color: #7fffd4;
-      text-shadow: 0 0 6px rgba(127, 255, 212, 0.6);
+      color: #ffffff;
+      text-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
       pointer-events: none;
     }
     .graph-overlay a, .graph-overlay button {
@@ -31,14 +31,14 @@
       background: linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0));
     }
     .graph-topbar a {
-      color: #7fffd4;
+      color: #ffffff;
       text-decoration: none;
       font-weight: bold;
-      border: 1px solid #7fffd4;
+      border: 1px solid #ffffff;
       padding: 4px 10px;
       background: rgba(0,0,0,0.4);
     }
-    .graph-topbar a:hover { background: rgba(127,255,212,0.15); }
+    .graph-topbar a:hover { background: rgba(255,255,255,0.15); }
     .graph-title { font-size: 1em; letter-spacing: 0.08em; }
 
     .graph-hint {
@@ -48,7 +48,7 @@
       line-height: 1.6;
       background: rgba(0,0,0,0.4);
       padding: 8px 12px;
-      border: 1px solid rgba(127,255,212,0.3);
+      border: 1px solid rgba(255,255,255,0.3);
     }
 
     .graph-status {
@@ -63,7 +63,7 @@
       right: 16px;
       width: 260px;
       background: rgba(0,0,0,0.7);
-      border: 1px solid #7fffd4;
+      border: 1px solid #ffffff;
       padding: 12px 14px;
       display: none;
     }
@@ -76,19 +76,19 @@
     }
     .graph-panel .panel-meta {
       font-size: 0.8em;
-      color: #9fd;
+      color: #cccccc;
       margin: 0 0 10px;
     }
     .graph-panel a.btn {
       display: inline-block;
-      color: #001a14;
-      background: #7fffd4;
+      color: #111111;
+      background: #ffffff;
       text-decoration: none;
       font-weight: bold;
       padding: 5px 10px;
       border: none;
     }
-    .graph-panel a.btn:hover { background: #b6ffe8; }
+    .graph-panel a.btn:hover { background: #e0e0e0; }
   </style>
 </head>
 <body>
@@ -102,7 +102,7 @@
 
   <div class="graph-overlay graph-hint">
     드래그: 회전 &nbsp;|&nbsp; 스크롤: 확대/축소 &nbsp;|&nbsp; 우클릭 드래그: 이동<br>
-    노드 클릭: 선택 + 조명 켜기
+    노드/링크 클릭: 선택 + 조명 켜기
   </div>
 
   <div class="graph-overlay graph-status" id="graph-status">그래프를 불러오는 중...</div>
