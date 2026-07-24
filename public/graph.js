@@ -208,6 +208,8 @@
       mesh.userData.name = n.id;
       mesh.userData.top = boxHeight;
       mesh.userData.childCount = (childrenOf[n.id] || []).length;
+      mesh.userData.footprint = footprint;
+      mesh.userData.label = n.label;
       scene.add(mesh);
       nodeMeshes.push(mesh);
     });
@@ -251,6 +253,57 @@
     });
     scene.add(linkGroup);
 
+    // --- Node labels: the page's own title, laid flat on top of its box's
+    // roof like signage painted on a building. Drawn onto a canvas with the
+    // browser's own font rendering (rather than THREE.TextGeometry, which
+    // needs a pre-baked vector font with every glyph included - fine for ~200
+    // Latin letterforms, hopeless for Hangul's 11000+ syllable blocks) so any
+    // title - Korean included - just works with no extra font asset.
+    var LABEL_FONT = '"Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+    var LABEL_CANVAS_HEIGHT = 128;
+    function makeLabelTexture(text) {
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+      var fontSize = LABEL_CANVAS_HEIGHT * 0.72;
+      ctx.font = 'bold ' + fontSize + 'px ' + LABEL_FONT;
+      var textWidth = Math.max(ctx.measureText(text).width, 1);
+      var padding = fontSize * 0.3;
+      canvas.width = textWidth + padding * 2;
+      canvas.height = LABEL_CANVAS_HEIGHT;
+      // Re-set font/alignment - sizing the canvas above resets the context.
+      ctx.font = 'bold ' + fontSize + 'px ' + LABEL_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#000000';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      var texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      return { texture: texture, aspect: canvas.width / canvas.height };
+    }
+
+    nodeMeshes.forEach(function (mesh) {
+      var label = mesh.userData.label;
+      if (!label) return;
+      var p = positions[mesh.userData.name];
+      var depthScale = 1 / (1 + p.depth * 0.12);
+      var worldHeight = Math.max(mesh.userData.footprint * 0.22, 0.5) * depthScale;
+      var made = makeLabelTexture(label);
+      var worldWidth = worldHeight * made.aspect;
+
+      var labelMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(worldWidth, worldHeight),
+        new THREE.MeshBasicMaterial({ map: made.texture, transparent: true, depthWrite: false })
+      );
+      // Lay flat: rotating -90 deg around X turns the plane so it faces
+      // straight up, like signage painted on the box's roof.
+      labelMesh.rotation.x = -Math.PI / 2;
+      labelMesh.position.set(mesh.position.x, mesh.userData.top + 0.02, mesh.position.z);
+      labelMesh.receiveShadow = true;
+      scene.add(labelMesh);
+    });
+
     // --- Selection: clicking a box turns on its lamp and flies the camera in
     var raycaster = new THREE.Raycaster();
     var mouse = new THREE.Vector2();
@@ -258,6 +311,11 @@
     var selectedLamp = null;
     var selectedBeam = null;
     var cameraAnim = null;
+    // Back-navigation stack: every time selection actually moves to a
+    // different node, the node being left is pushed here, so the 'b' key
+    // can pop it back off and return to it (plain undo, not full
+    // back/forward - going back doesn't create a fresh "redo" entry).
+    var history = [];
 
     // Which way is this node's own subtree branching? Average direction to
     // its children; a childless leaf instead continues the direction it was
@@ -308,7 +366,10 @@
       panelEl.classList.remove('visible');
     }
 
-    function selectMesh(mesh, moveCamera) {
+    function selectMesh(mesh, moveCamera, lookDirOverride, skipHistory) {
+      if (!skipHistory && selectedMesh && selectedMesh !== mesh) {
+        history.push(selectedMesh.userData.name);
+      }
       clearSelection();
       selectedMesh = mesh;
       mesh.material = selectedMaterial;
@@ -350,7 +411,7 @@
       panelEl.classList.add('visible');
 
       if (moveCamera !== false) {
-        var dir = branchDirection(mesh.userData.name);
+        var dir = lookDirOverride || branchDirection(mesh.userData.name);
         var nodePos = mesh.position.clone();
         var behind = depthSpacing * 0.13;
         var elevation = depthSpacing * 0.035;
@@ -367,6 +428,46 @@
     function meshForName(name) {
       return nodeMeshes.filter(function (m) { return m.userData.name === name; })[0];
     }
+
+    // 'b' key: pop the back-navigation stack and fly to whatever node was
+    // selected just before the current one.
+    function goBack() {
+      if (!history.length) return;
+      var target = meshForName(history.pop());
+      if (target) selectMesh(target, true, null, true);
+    }
+
+    // Down-arrow: go to the current node's parent (up the tree) - not the
+    // same as 'b', which retraces wherever you've actually been.
+    function goToParent() {
+      if (!selectedMesh) return;
+      var name = selectedMesh.userData.name;
+      var parentName = parentOf[name];
+      if (!parentName) return;
+      var target = meshForName(parentName);
+      if (!target) return;
+
+      // Same "look back at the child we're leaving" framing used when
+      // clicking the parent-side half of a link.
+      var pPos = positions[parentName];
+      var cPos = positions[name];
+      var lookDir = null;
+      if (pPos && cPos) {
+        lookDir = new THREE.Vector3(cPos.x - pPos.x, 0, cPos.z - pPos.z);
+        if (lookDir.lengthSq() >= 1e-6) lookDir.normalize();
+        else lookDir = null;
+      }
+      selectMesh(target, true, lookDir);
+    }
+
+    window.addEventListener('keydown', function (ev) {
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (ev.key === 'b' || ev.key === 'B') {
+        goBack();
+      } else if (ev.key === 'ArrowDown') {
+        goToParent();
+      }
+    });
 
     function nearerEndpoint(point, ud) {
       var pp = positions[ud.parentName];
@@ -391,10 +492,25 @@
       var linkHits = raycaster.intersectObjects(linkGroup.children);
       if (linkHits.length) {
         var hit = linkHits[0];
-        var name = nearerEndpoint(hit.point, hit.object.userData);
+        var ud = hit.object.userData;
+        var name = nearerEndpoint(hit.point, ud);
         var target = meshForName(name);
         if (target) {
-          selectMesh(target);
+          // Clicking the parent-side half of a link means "go up" - look
+          // back at the child we just came from, rather than the parent's
+          // own (possibly unrelated) average children direction, so moving
+          // up reads as looking back down at where you came from.
+          var lookDir = null;
+          if (name === ud.parentName) {
+            var pPos = positions[ud.parentName];
+            var cPos = positions[ud.childName];
+            if (pPos && cPos) {
+              lookDir = new THREE.Vector3(cPos.x - pPos.x, 0, cPos.z - pPos.z);
+              if (lookDir.lengthSq() < 1e-6) lookDir = null;
+              else lookDir.normalize();
+            }
+          }
+          selectMesh(target, true, lookDir);
           return;
         }
       }
