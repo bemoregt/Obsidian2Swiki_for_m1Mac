@@ -89,6 +89,14 @@ app.get('/api/pages', (req, res) => {
   res.json({ pages: wiki.listPages() });
 });
 
+app.get('/graph', (req, res) => {
+  res.render('graph', {});
+});
+
+app.get('/api/graph', (req, res) => {
+  res.json(wiki.buildTree(req.query.root));
+});
+
 app.get('/changes', (req, res) => {
   res.render('changes', { pages: wiki.listPagesWithMtime() });
 });

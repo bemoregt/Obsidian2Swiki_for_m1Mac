@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>지식 그래프</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%; }
+    #graph-canvas { display: block; width: 100vw; height: 100vh; }
+
+    .graph-overlay {
+      position: fixed;
+      z-index: 10;
+      font-family: "SFMono-Regular", Menlo, monospace;
+      color: #7fffd4;
+      text-shadow: 0 0 6px rgba(127, 255, 212, 0.6);
+      pointer-events: none;
+    }
+    .graph-overlay a, .graph-overlay button {
+      pointer-events: auto;
+    }
+
+    .graph-topbar {
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0));
+    }
+    .graph-topbar a {
+      color: #7fffd4;
+      text-decoration: none;
+      font-weight: bold;
+      border: 1px solid #7fffd4;
+      padding: 4px 10px;
+      background: rgba(0,0,0,0.4);
+    }
+    .graph-topbar a:hover { background: rgba(127,255,212,0.15); }
+    .graph-title { font-size: 1em; letter-spacing: 0.08em; }
+
+    .graph-hint {
+      bottom: 12px;
+      left: 16px;
+      font-size: 0.8em;
+      line-height: 1.6;
+      background: rgba(0,0,0,0.4);
+      padding: 8px 12px;
+      border: 1px solid rgba(127,255,212,0.3);
+    }
+
+    .graph-status {
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1em;
+    }
+
+    .graph-panel {
+      top: 56px;
+      right: 16px;
+      width: 260px;
+      background: rgba(0,0,0,0.7);
+      border: 1px solid #7fffd4;
+      padding: 12px 14px;
+      display: none;
+    }
+    .graph-panel.visible { display: block; }
+    .graph-panel .panel-title {
+      font-size: 1.05em;
+      font-weight: bold;
+      margin: 0 0 8px;
+      word-break: break-all;
+    }
+    .graph-panel .panel-meta {
+      font-size: 0.8em;
+      color: #9fd;
+      margin: 0 0 10px;
+    }
+    .graph-panel a.btn {
+      display: inline-block;
+      color: #001a14;
+      background: #7fffd4;
+      text-decoration: none;
+      font-weight: bold;
+      padding: 5px 10px;
+      border: none;
+    }
+    .graph-panel a.btn:hover { background: #b6ffe8; }
+  </style>
+</head>
+<body>
+  <canvas id="graph-canvas"></canvas>
+
+  <div class="graph-overlay graph-topbar">
+    <a href="/">← 위키로</a>
+    <span class="graph-title">🕸️ 지식 그래프</span>
+    <span></span>
+  </div>
+
+  <div class="graph-overlay graph-hint">
+    드래그: 회전 &nbsp;|&nbsp; 스크롤: 확대/축소 &nbsp;|&nbsp; 우클릭 드래그: 이동<br>
+    노드 클릭: 선택 + 조명 켜기
+  </div>
+
+  <div class="graph-overlay graph-status" id="graph-status">그래프를 불러오는 중...</div>
+
+  <div class="graph-overlay graph-panel" id="graph-panel">
+    <p class="panel-title" id="panel-title"></p>
+    <p class="panel-meta" id="panel-meta"></p>
+    <a class="btn" id="panel-open" href="#">페이지 열기</a>
+  </div>
+
+  <script src="/static/vendor/three.min.js"></script>
+  <script src="/static/vendor/OrbitControls.js"></script>
+  <script src="/static/graph.js"></script>
+</body>
+</html>
