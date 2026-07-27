@@ -4,6 +4,8 @@
   var panelTitle = document.getElementById('panel-title');
   var panelMeta = document.getElementById('panel-meta');
   var panelOpen = document.getElementById('panel-open');
+  var panelBack = document.getElementById('panel-back');
+  var panelUp = document.getElementById('panel-up');
   var canvas = document.getElementById('graph-canvas');
   if (!canvas || typeof THREE === 'undefined') return;
 
@@ -409,6 +411,8 @@
       panelMeta.textContent = '연결된 하위 문서: ' + mesh.userData.childCount + '개';
       panelOpen.href = '/page/' + encodeURIComponent(mesh.userData.name);
       panelEl.classList.add('visible');
+      if (panelUp) panelUp.disabled = !parentOf[mesh.userData.name];
+      if (panelBack) panelBack.disabled = history.length === 0;
 
       if (moveCamera !== false) {
         var dir = lookDirOverride || branchDirection(mesh.userData.name);
@@ -460,14 +464,29 @@
       selectMesh(target, true, lookDir);
     }
 
-    window.addEventListener('keydown', function (ev) {
-      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      if (ev.key === 'b' || ev.key === 'B') {
-        goBack();
-      } else if (ev.key === 'ArrowDown') {
-        goToParent();
-      }
-    });
+    // Buttons in the info panel do the exact same thing as the 'b'/down-arrow
+    // keys, but as plain clicks - keyboard shortcuts on a page like this are
+    // easily swallowed by browser extensions (a "b = back" binding in
+    // particular collides with common Vimium-style navigation add-ons)
+    // before our own keydown listener ever sees them, so clicking always
+    // works even when the keys don't.
+    if (panelBack) panelBack.addEventListener('click', goBack);
+    if (panelUp) panelUp.addEventListener('click', goToParent);
+
+    // Capture phase, so this runs before bubble-phase listeners a browser
+    // extension might have attached to try to claim the same keys first.
+    window.addEventListener(
+      'keydown',
+      function (ev) {
+        if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+        if (ev.key === 'b' || ev.key === 'B') {
+          goBack();
+        } else if (ev.key === 'ArrowDown') {
+          goToParent();
+        }
+      },
+      true
+    );
 
     function nearerEndpoint(point, ud) {
       var pp = positions[ud.parentName];

@@ -34,6 +34,11 @@
     <p class="side-hint" id="core-function-status"></p>
   </div>
 
+  <div class="translate-bar">
+    <button type="button" id="translate-btn" class="btn">🌐 영상 설명 번역</button>
+    <p class="side-hint" id="translate-status"></p>
+  </div>
+
   <div class="page-footer-nav">
     <a class="btn" id="up-btn" style="display:none"></a>
   </div>
@@ -42,6 +47,7 @@
   <script src="/static/glossary.js"></script>
   <script src="/static/video.js"></script>
   <script src="/static/corefunc.js"></script>
+  <script src="/static/translate.js"></script>
   <% if (html.includes('class="mermaid"')) { %>
     <script src="/static/vendor/mermaid.min.js"></script>
     <script>mermaid.initialize({ startOnLoad: true });</script>

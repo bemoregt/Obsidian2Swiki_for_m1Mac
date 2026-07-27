@@ -79,16 +79,25 @@
       color: #cccccc;
       margin: 0 0 10px;
     }
-    .graph-panel a.btn {
+    .graph-panel .panel-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .graph-panel a.btn, .graph-panel button.btn {
       display: inline-block;
       color: #111111;
       background: #ffffff;
       text-decoration: none;
       font-weight: bold;
+      font-family: inherit;
+      font-size: 0.85em;
       padding: 5px 10px;
       border: none;
+      cursor: pointer;
     }
-    .graph-panel a.btn:hover { background: #e0e0e0; }
+    .graph-panel a.btn:hover, .graph-panel button.btn:hover { background: #e0e0e0; }
+    .graph-panel button.btn:disabled { color: #888888; background: #cccccc; cursor: default; }
   </style>
 </head>
 <body>
@@ -102,7 +111,7 @@
 
   <div class="graph-overlay graph-hint">
     드래그: 회전 &nbsp;|&nbsp; 스크롤: 확대/축소 &nbsp;|&nbsp; 우클릭 드래그: 이동<br>
-    노드/링크 클릭: 선택 + 조명 켜기 &nbsp;|&nbsp; B키: 이전 노드로 &nbsp;|&nbsp; ↓키: 상위 노드로
+    노드/링크 클릭: 선택 + 조명 켜기 &nbsp;|&nbsp; B키/◀이전 버튼: 이전 노드로 &nbsp;|&nbsp; ↓키/▲상위 버튼: 상위 노드로
   </div>
 
   <div class="graph-overlay graph-status" id="graph-status">그래프를 불러오는 중...</div>
@@ -110,7 +119,11 @@
   <div class="graph-overlay graph-panel" id="graph-panel">
     <p class="panel-title" id="panel-title"></p>
     <p class="panel-meta" id="panel-meta"></p>
-    <a class="btn" id="panel-open" href="#">페이지 열기</a>
+    <div class="panel-buttons">
+      <a class="btn" id="panel-open" href="#">페이지 열기</a>
+      <button type="button" class="btn" id="panel-back">◀ 이전</button>
+      <button type="button" class="btn" id="panel-up">▲ 상위</button>
+    </div>
   </div>
 
   <script src="/static/vendor/three.min.js"></script>

@@ -239,6 +239,36 @@ app.post('/page/:name/core-function', async (req, res) => {
   }
 });
 
+// "영어로 번역": the "유튜브 영상 만들기" feature writes a "- 설명: ..." line
+// with the generated video description - this pulls just that line out,
+// translates it with a local Ollama model, and appends the result, leaving
+// the rest of the page (and the original Korean description) untouched.
+const VIDEO_DESCRIPTION_RE = /^-\s*설명\s*[:：]\s*(.+)$/m;
+
+app.post('/page/:name/translate', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const match = body.match(VIDEO_DESCRIPTION_RE);
+    if (!match) {
+      return res.status(400).json({ error: '첨부된 동영상 설명을 찾지 못했습니다. 먼저 🎬 유튜브 영상 만들기로 설명을 생성해주세요.' });
+    }
+    const description = match[1].trim();
+
+    const translated = await ollama.translateToEnglish(name, description);
+
+    const snippet = `\n## \u{1F310} Video Description (English)\n\n${translated}\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, translated });
+  } catch (err) {
+    console.error('[translate] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const SHORTS_MAX_SECONDS = 180;
 
 // Shared by /make-video and /make-shorts: locates the page's linked audio +
