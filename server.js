@@ -239,10 +239,12 @@ app.post('/page/:name/core-function', async (req, res) => {
   }
 });
 
-// "영어로 번역": the "유튜브 영상 만들기" feature writes a "- 설명: ..." line
-// with the generated video description - this pulls just that line out,
-// translates it with a local Ollama model, and appends the result, leaving
-// the rest of the page (and the original Korean description) untouched.
+// "영어로 번역": the "유튜브 영상 만들기" feature writes "- 제목: ..." and
+// "- 설명: ..." lines with the generated video title/description - this pulls
+// just those two lines out, translates each with a local Ollama model, and
+// appends the result, leaving the rest of the page (and the original Korean
+// title/description) untouched.
+const VIDEO_TITLE_RE = /^-\s*제목\s*[:：]\s*(.+)$/m;
 const VIDEO_DESCRIPTION_RE = /^-\s*설명\s*[:：]\s*(.+)$/m;
 
 app.post('/page/:name/translate', async (req, res) => {
@@ -251,22 +253,79 @@ app.post('/page/:name/translate', async (req, res) => {
     if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
     const { body } = wiki.readPage(name);
-    const match = body.match(VIDEO_DESCRIPTION_RE);
-    if (!match) {
-      return res.status(400).json({ error: '첨부된 동영상 설명을 찾지 못했습니다. 먼저 🎬 유튜브 영상 만들기로 설명을 생성해주세요.' });
+    const titleMatch = body.match(VIDEO_TITLE_RE);
+    const descMatch = body.match(VIDEO_DESCRIPTION_RE);
+    if (!titleMatch || !descMatch) {
+      return res
+        .status(400)
+        .json({ error: '첨부된 동영상 제목/설명을 찾지 못했습니다. 먼저 🎬 유튜브 영상 만들기로 생성해주세요.' });
     }
-    const description = match[1].trim();
+    const title = titleMatch[1].trim();
+    const description = descMatch[1].trim();
 
-    const translated = await ollama.translateToEnglish(name, description);
+    const [translatedTitle, translatedDescription] = await Promise.all([
+      ollama.translateToEnglish(name, title),
+      ollama.translateToEnglish(name, description),
+    ]);
 
-    const snippet = `\n## \u{1F310} Video Description (English)\n\n${translated}\n`;
+    const snippet =
+      `\n## \u{1F310} Video Title & Description (English)\n\n` +
+      `- Title: ${translatedTitle}\n` +
+      `- Description: ${translatedDescription}\n`;
     appendToPage(name, snippet);
 
-    res.json({ ok: true, translated });
+    res.json({ ok: true, translatedTitle, translatedDescription });
   } catch (err) {
     console.error('[translate] error', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// "키워드로 채용정보 찾기" (1개월 / 1주일): no Ollama involved here on purpose -
+// a local model has no internet access and would have to invent company
+// names/URLs for any "job listing" it produced, which is exactly the kind of
+// fabricated-as-real content this wiki shouldn't generate. Instead this builds
+// real search-result links on actual job sites for the page's own title, so
+// what's listed always leads to genuine (if unfiltered-by-us) postings.
+// LinkedIn's `f_TPR` param (r2592000 = 30 days, r604800 = 7 days) is a
+// well-documented recency filter; the three Korean sites don't have an
+// equally reliable URL param for either window, so their links land on a
+// plain keyword search and the note below asks the reader to apply the
+// recency filter themselves once there.
+const JOB_SEARCH_PERIODS = {
+  month: { label: '1개월', linkedinTPR: 'r2592000' },
+  week: { label: '1주일', linkedinTPR: 'r604800' },
+};
+
+function buildJobSearchSnippet(keyword, periodKey) {
+  const period = JOB_SEARCH_PERIODS[periodKey] || JOB_SEARCH_PERIODS.month;
+  const q = encodeURIComponent(keyword);
+  const sites = [
+    { label: '사람인에서 검색', url: `https://www.saramin.co.kr/zf_user/search/recruit?searchword=${q}` },
+    { label: '잡코리아에서 검색', url: `https://www.jobkorea.co.kr/Search/?stext=${q}` },
+    { label: '원티드에서 검색', url: `https://www.wanted.co.kr/search?query=${q}&tab=position` },
+    {
+      label: `LinkedIn에서 검색 (최근 ${period.label})`,
+      url: `https://www.linkedin.com/jobs/search/?keywords=${q}&f_TPR=${period.linkedinTPR}`,
+    },
+  ];
+
+  const list = sites.map((s) => `- [${s.label}](${s.url})`).join('\n');
+  const snippet =
+    `\n## \u{1F4BC} 채용정보 검색 (최근 ${period.label}): ${keyword}\n\n${list}\n\n` +
+    `(사람인/잡코리아/원티드는 사이트에서 직접 "최근 ${period.label}" 등록일 필터를 적용해주세요. LinkedIn 링크는 최근 ${period.label}로 자동 필터링됩니다.)\n`;
+  return { snippet, sites };
+}
+
+app.post('/page/:name/job-search', (req, res) => {
+  const { name } = req.params;
+  if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+  const periodKey = req.body && req.body.period === 'week' ? 'week' : 'month';
+  const { snippet, sites } = buildJobSearchSnippet(name, periodKey);
+  appendToPage(name, snippet);
+
+  res.json({ ok: true, sites });
 });
 
 const SHORTS_MAX_SECONDS = 180;

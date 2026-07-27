@@ -35,8 +35,16 @@
   </div>
 
   <div class="translate-bar">
-    <button type="button" id="translate-btn" class="btn">🌐 영상 설명 번역</button>
+    <button type="button" id="translate-btn" class="btn">🌐 영상 제목·설명 번역</button>
     <p class="side-hint" id="translate-status"></p>
+  </div>
+
+  <div class="jobsearch-bar">
+    <div class="jobsearch-bar-buttons">
+      <button type="button" class="btn jobsearch-btn" data-period="month">💼 최근 1개월 채용정보 찾기</button>
+      <button type="button" class="btn jobsearch-btn" data-period="week">💼 최근 1주일 채용정보 찾기</button>
+    </div>
+    <p class="side-hint" id="jobsearch-status"></p>
   </div>
 
   <div class="page-footer-nav">
@@ -48,6 +56,7 @@
   <script src="/static/video.js"></script>
   <script src="/static/corefunc.js"></script>
   <script src="/static/translate.js"></script>
+  <script src="/static/jobsearch.js"></script>
   <% if (html.includes('class="mermaid"')) { %>
     <script src="/static/vendor/mermaid.min.js"></script>
     <script>mermaid.initialize({ startOnLoad: true });</script>

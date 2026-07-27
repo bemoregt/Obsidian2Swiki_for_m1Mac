@@ -13,7 +13,7 @@
   btn.addEventListener('click', function () {
     if (!currentName) return;
     btn.disabled = true;
-    setStatus('AI가 동영상 설명을 영어로 번역하는 중입니다...');
+    setStatus('AI가 동영상 제목과 설명을 영어로 번역하는 중입니다...');
 
     fetch('/page/' + encodeURIComponent(currentName) + '/translate', { method: 'POST' })
       .then(function (r) {
