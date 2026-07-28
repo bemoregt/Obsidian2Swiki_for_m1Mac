@@ -33,6 +33,28 @@ app.use(
 
 const PORT = process.env.PORT || 3000;
 
+// The front page ("index") is world-editable like any other wiki page, but
+// it's the first thing visitors land on - require a login before any write
+// to it goes through, while every other page stays open.
+const INDEX_EDIT_AUTH = { user: 'very', pass: 'good' };
+
+function requireIndexAuth(req, res, next) {
+  if (req.params.name !== 'index') return next();
+
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    const sep = decoded.indexOf(':');
+    const user = decoded.slice(0, sep);
+    const pass = decoded.slice(sep + 1);
+    if (user === INDEX_EDIT_AUTH.user && pass === INDEX_EDIT_AUTH.pass) return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="index-edit"');
+  res.status(401).send('index 페이지를 편집하려면 로그인이 필요합니다.');
+}
+
 const UPLOAD_DIR = path.join(wiki.VAULT_DIR, '_uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -132,13 +154,13 @@ app.get('/page/:name', (req, res) => {
   res.render('view', { name, html });
 });
 
-app.get('/page/:name/edit', (req, res) => {
+app.get('/page/:name/edit', requireIndexAuth, (req, res) => {
   const { name } = req.params;
   const body = wiki.pageExists(name) ? wiki.readPage(name).body : '';
   res.render('edit', { name, body });
 });
 
-app.post('/page/:name', (req, res) => {
+app.post('/page/:name', requireIndexAuth, (req, res) => {
   const { name } = req.params;
   wiki.writePage(name, req.body.body || '');
 
@@ -154,7 +176,7 @@ app.post('/page/:name', (req, res) => {
 
 // Used by the sidebar file upload widget when viewing (not editing) a page -
 // there's no cursor to insert at, so the snippet goes at the very end.
-app.post('/page/:name/append', (req, res) => {
+app.post('/page/:name/append', requireIndexAuth, (req, res) => {
   const { name } = req.params;
   const snippet = (req.body && req.body.snippet) || '';
   if (!snippet.trim()) return res.status(400).json({ error: 'no snippet' });
@@ -169,7 +191,7 @@ app.post('/page/:name/append', (req, res) => {
 // "전문용어 페이지 만들기": for each selected foreign-word term, generate a
 // short definition with a local Ollama (cloud) model if the term doesn't
 // already have a page, then wrap its first occurrence in *term* link syntax.
-app.post('/page/:name/glossarize', async (req, res) => {
+app.post('/page/:name/glossarize', requireIndexAuth, async (req, res) => {
   try {
     const { name } = req.params;
     const terms = Array.isArray(req.body.terms)
@@ -208,7 +230,7 @@ const CORE_FUNCTION_COUNT = 3;
 // "핵심 함수 만들기": asks Ollama to split the page's algorithm into exactly
 // 3 fully-implemented functions, then draws a flowchart of the whole with
 // those 3 steps highlighted.
-app.post('/page/:name/core-function', async (req, res) => {
+app.post('/page/:name/core-function', requireIndexAuth, async (req, res) => {
   try {
     const { name } = req.params;
     if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
@@ -428,7 +450,7 @@ function appendToPage(name, snippet) {
 // "유튜브 영상 만들기": if the page links to an uploaded audio file and an
 // uploaded PDF, renders the PDF's pages as an equal-time slideshow muxed with
 // the audio, asks Ollama for a title/description, and appends both to the page.
-app.post('/page/:name/make-video', async (req, res) => {
+app.post('/page/:name/make-video', requireIndexAuth, async (req, res) => {
   const { name } = req.params;
   if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
@@ -471,7 +493,7 @@ app.post('/page/:name/make-video', async (req, res) => {
 // "쇼츠 영상 만들기": same source (audio + PDF slideshow) as the YouTube
 // video, but cropped to the first 3 minutes and rendered in a black-background
 // portrait (1080x1920) frame for YouTube Shorts.
-app.post('/page/:name/make-shorts', async (req, res) => {
+app.post('/page/:name/make-shorts', requireIndexAuth, async (req, res) => {
   const { name } = req.params;
   if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
