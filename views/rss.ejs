@@ -1,0 +1,19 @@
+<%- include('_header', { name: feedTitle }) %>
+  <h1><%= feedTitle %></h1>
+  <p class="side-hint">
+    원본 RSS 주소: <a class="external-link" href="<%= feedUrl %>" target="_blank" rel="noopener noreferrer"><%= feedUrl %></a>
+    (피드 리더에 이 주소를 등록하면 구독할 수 있습니다)
+  </p>
+  <ul class="rss-list">
+    <% items.forEach(function(item) { %>
+      <li class="rss-item">
+        <a class="rss-item-title" href="<%= item.link %>" target="_blank" rel="noopener noreferrer"><%= item.title %></a>
+        <% if (item.pubDate) { %><p class="rss-item-date"><%= item.pubDate %></p><% } %>
+        <% if (item.snippet) { %><p class="rss-item-snippet"><%= item.snippet %></p><% } %>
+      </li>
+    <% }); %>
+    <% if (!items.length) { %>
+      <li>이 피드에는 항목이 없습니다.</li>
+    <% } %>
+  </ul>
+<%- include('_footer') %>

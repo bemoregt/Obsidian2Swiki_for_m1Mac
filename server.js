@@ -4,9 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
+const RSSParser = require('rss-parser');
 const wiki = require('./lib/wiki');
 const ollama = require('./lib/ollama');
 const video = require('./lib/video');
+
+const rssParser = new RSSParser();
 
 const app = express();
 
@@ -326,6 +329,67 @@ app.post('/page/:name/job-search', (req, res) => {
   appendToPage(name, snippet);
 
   res.json({ ok: true, sites });
+});
+
+// "키워드로 RSS Feed 찾기": same reasoning as the job-search buttons above - no
+// Ollama call, because a local model can't browse the web and would have to
+// invent feed URLs. These three are real, keyword-searchable RSS endpoints
+// (no API key needed) that return live, genuinely matching results for
+// whatever the page's title is.
+app.post('/page/:name/rss-search', (req, res) => {
+  const { name } = req.params;
+  if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+  const keyword = name;
+  const q = encodeURIComponent(keyword);
+  const feeds = [
+    { label: 'Google 뉴스 RSS', url: `https://news.google.com/rss/search?q=${q}&hl=ko&gl=KR&ceid=KR:ko` },
+    { label: 'Bing 뉴스 RSS', url: `https://www.bing.com/news/search?q=${q}&format=RSS` },
+    { label: 'Reddit 검색 RSS', url: `https://www.reddit.com/search.rss?q=${q}` },
+  ];
+
+  // Link to our own /rss-view proxy (which fetches + renders the feed as a
+  // readable list) rather than the raw XML address directly - that page also
+  // shows the original feed URL for anyone who wants to subscribe to it in a
+  // real feed reader instead. Must be an absolute http(s) URL: [label](url)
+  // only renders as a plain link for those - a relative path like
+  // "/rss-view?..." would instead match the uploaded-file download-link
+  // branch and get a `download` attribute, popping a save dialog instead of
+  // navigating to the page.
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const list = feeds
+    .map((f) => `- [${f.label}](${origin}/rss-view?url=${encodeURIComponent(f.url)}&label=${encodeURIComponent(f.label)})`)
+    .join('\n');
+  const snippet = `\n## \u{1F4E1} RSS Feed 검색: ${keyword}\n\n${list}\n`;
+  appendToPage(name, snippet);
+
+  res.json({ ok: true, feeds });
+});
+
+// Fetches and parses a real RSS/Atom feed URL server-side and renders it as a
+// readable list instead of sending the reader to raw XML.
+app.get('/rss-view', async (req, res) => {
+  const feedUrl = req.query.url;
+  if (!feedUrl || !/^https?:\/\//i.test(feedUrl)) {
+    return res.status(400).send('<pre>잘못된 RSS 주소입니다.</pre>');
+  }
+  try {
+    const feed = await rssParser.parseURL(feedUrl);
+    const items = (feed.items || []).slice(0, 50).map((item) => ({
+      title: item.title || '(제목 없음)',
+      link: item.link || '',
+      pubDate: item.pubDate || item.isoDate || '',
+      snippet: (item.contentSnippet || item.summary || item.content || '').trim().slice(0, 300),
+    }));
+    res.render('rss', {
+      feedTitle: feed.title || req.query.label || 'RSS Feed',
+      feedUrl,
+      items,
+    });
+  } catch (err) {
+    console.error('[rss-view] error', err);
+    res.status(502).send(`<pre>RSS Feed를 불러오지 못했습니다: ${err.message}</pre>`);
+  }
 });
 
 const SHORTS_MAX_SECONDS = 180;

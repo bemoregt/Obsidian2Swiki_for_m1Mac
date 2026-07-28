@@ -12,6 +12,7 @@
     "ejs": "^3.1.10",
     "express": "^4.19.2",
     "highlight.js": "^11.11.1",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "rss-parser": "^3.13.0"
   }
 }

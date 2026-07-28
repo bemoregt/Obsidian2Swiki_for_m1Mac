@@ -200,6 +200,11 @@ a.file-link:hover { background: #eef; }
   gap: 8px;
 }
 
+.rssfeed-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
 .page-footer-nav {
   margin-top: 24px;
   padding-top: 12px;
@@ -248,6 +253,16 @@ pre.mermaid {
 .hljs-decorator, .hljs-meta { color: #3e999f; }
 .hljs-attr, .hljs-variable { color: #b58900; }
 
+/* A tiny cursor drift while clicking (common on trackpads) makes the browser
+   start a text selection instead of registering the click, since the link's
+   own characters are selectable text - the dashed underline below them isn't,
+   so clicks there always land as a real click. Disabling selection on the
+   link itself removes that gap: any click on the label now always navigates. */
+a.wikilink, a.wikilink-new {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 a.wikilink { color: #0000cc; text-decoration: underline; }
 
 a.external-link { color: #006622; text-decoration: none; }
@@ -283,6 +298,13 @@ a.wikilink-new {
 .page-list li { padding: 4px 0; border-bottom: 1px solid #eee; }
 .snippet { color: #666; font-size: 0.9em; }
 .mtime { color: #888; font-size: 0.85em; margin-left: 8px; }
+
+.rss-list { list-style: none; padding: 0; }
+.rss-item { padding: 10px 0; border-bottom: 1px solid #eee; }
+.rss-item-title { font-weight: bold; color: #0000cc; text-decoration: none; }
+.rss-item-title:hover { text-decoration: underline; }
+.rss-item-date { margin: 4px 0; color: #888; font-size: 0.85em; }
+.rss-item-snippet { margin: 4px 0 0; color: #444; font-size: 0.9em; line-height: 1.5; }
 
 table.calendar {
   border-collapse: collapse;
