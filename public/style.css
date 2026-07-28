@@ -213,6 +213,7 @@ a.file-link:hover { background: #eef; }
 
 .page-body h1, .page-body h2, .page-body h3 { margin-top: 1.2em; }
 .page-body p { line-height: 1.6; }
+.page-body hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
 .page-body code {
   font-family: "SFMono-Regular", Menlo, monospace;
   background: #f0f0f0;
