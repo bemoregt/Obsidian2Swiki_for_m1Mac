@@ -41,7 +41,6 @@
 
   <div class="jobsearch-bar">
     <div class="jobsearch-bar-buttons">
-      <button type="button" class="btn jobsearch-btn" data-period="month">💼 최근 1개월 채용정보 찾기</button>
       <button type="button" class="btn jobsearch-btn" data-period="week">💼 최근 1주일 채용정보 찾기</button>
     </div>
     <p class="side-hint" id="jobsearch-status"></p>
@@ -50,6 +49,33 @@
   <div class="rssfeed-bar">
     <button type="button" id="rssfeed-btn" class="btn">📡 키워드로 RSS Feed 찾기</button>
     <p class="side-hint" id="rssfeed-status"></p>
+  </div>
+
+  <div class="arxiv-bar">
+    <div class="arxiv-bar-buttons">
+      <button type="button" class="btn arxiv-btn" data-period="month">📚 최근 1개월 arXiv 논문 찾기</button>
+    </div>
+    <p class="side-hint" id="arxiv-status"></p>
+  </div>
+
+  <div class="pdfsummary-bar">
+    <button type="button" id="pdfsummary-btn" class="btn">📄 첨부 PDF 논문 요약</button>
+    <p class="side-hint" id="pdfsummary-status"></p>
+  </div>
+
+  <div class="relatedpages-bar">
+    <button type="button" id="relatedpages-btn" class="btn">🔗 관련 문서 추천</button>
+    <p class="side-hint" id="relatedpages-status"></p>
+  </div>
+
+  <div class="youtubesummary-bar">
+    <button type="button" id="youtubesummary-btn" class="btn">🎥 유튜브 영상 분석·요약</button>
+    <p class="side-hint" id="youtubesummary-status"></p>
+  </div>
+
+  <div class="codetest-bar">
+    <button type="button" id="codetest-btn" class="btn">🧪 코드로 테스트하기</button>
+    <p class="side-hint" id="codetest-status"></p>
   </div>
 
   <div class="page-footer-nav">
@@ -63,8 +89,18 @@
   <script src="/static/translate.js"></script>
   <script src="/static/jobsearch.js"></script>
   <script src="/static/rssfeed.js"></script>
+  <script src="/static/arxivsearch.js"></script>
+  <script src="/static/pdfsummary.js"></script>
+  <script src="/static/relatedpages.js"></script>
+  <script src="/static/youtubesummary.js"></script>
+  <script src="/static/codetest.js"></script>
   <% if (html.includes('class="mermaid"')) { %>
     <script src="/static/vendor/mermaid.min.js"></script>
     <script>mermaid.initialize({ startOnLoad: true });</script>
+  <% } %>
+  <% if (html.includes('data-katex')) { %>
+    <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+    <script src="/static/vendor/katex/katex.min.js"></script>
+    <script src="/static/katexrender.js"></script>
   <% } %>
 <%- include('_footer') %>

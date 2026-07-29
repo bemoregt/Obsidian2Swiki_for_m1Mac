@@ -8,6 +8,9 @@ const RSSParser = require('rss-parser');
 const wiki = require('./lib/wiki');
 const ollama = require('./lib/ollama');
 const video = require('./lib/video');
+const arxiv = require('./lib/arxiv');
+const youtube = require('./lib/youtube');
+const codetest = require('./lib/codetest');
 
 const rssParser = new RSSParser();
 
@@ -411,6 +414,423 @@ app.get('/rss-view', async (req, res) => {
   } catch (err) {
     console.error('[rss-view] error', err);
     res.status(502).send(`<pre>RSS Feed를 불러오지 못했습니다: ${err.message}</pre>`);
+  }
+});
+
+// "한글로 번역하기" on the RSS feed viewer: the viewer isn't a wiki page (it's
+// a live-fetched feed, nothing in the vault to append to), so this just
+// translates the given items in one batched Ollama call and hands the
+// translations back for the page to inject in place next to each item.
+const RSS_TRANSLATE_MAX_ITEMS = 30;
+
+app.post('/rss-translate', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body.items)
+      ? req.body.items.slice(0, RSS_TRANSLATE_MAX_ITEMS).map((it) => ({
+          title: typeof it.title === 'string' ? it.title : '',
+          snippet: typeof it.snippet === 'string' ? it.snippet : '',
+        }))
+      : [];
+    if (!items.length) return res.status(400).json({ error: 'no items' });
+
+    const translations = await ollama.translateFeedItemsToKorean(items);
+    res.json({ ok: true, translations });
+  } catch (err) {
+    console.error('[rss-translate] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Same collision-avoidance scheme as the multer upload's filename callback
+// above, but synchronous and reusable for files this server downloads
+// itself (arXiv PDFs) rather than ones a browser uploaded.
+function uniqueUploadFilename(desiredName) {
+  const ext = path.extname(desiredName);
+  const base = path.basename(desiredName, ext) || 'file';
+  let candidate = desiredName;
+  let i = 1;
+  while (fs.existsSync(path.join(UPLOAD_DIR, candidate))) {
+    candidate = `${base}-${i}${ext}`;
+    i += 1;
+  }
+  return candidate;
+}
+
+// "키워드로 최신 arXiv 논문 찾기" (1개월 / 1주일): unlike the job/RSS search
+// buttons, this one has a real, structured, date-filterable API to call
+// (arXiv's own), so it's used directly rather than routing through a plain
+// keyword search URL. Matching papers' PDFs are downloaded and uploaded to
+// this page automatically - capped at ARXIV_MAX_RESULTS so a broad keyword
+// can't silently pull down a large batch of files.
+const ARXIV_MAX_RESULTS = 5;
+
+app.post('/page/:name/arxiv-search', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const periodKey = req.body && req.body.period === 'week' ? 'week' : 'month';
+    const periodLabel = periodKey === 'week' ? '1주일' : '1개월';
+    const papers = await arxiv.searchRecent(name, { periodKey, maxResults: ARXIV_MAX_RESULTS });
+
+    if (!papers.length) {
+      return res.json({
+        ok: true,
+        papers: [],
+        message: `최근 ${periodLabel} 내 "${name}" 관련 신규 arXiv 논문을 찾지 못했습니다.`,
+      });
+    }
+
+    const downloaded = [];
+    // Downloaded sequentially per-paper (not Promise.all) so one slow or
+    // failing download can't take the whole batch down with it - a paper
+    // that fails just falls back to a plain abstract-page link instead.
+    const lines = papers.map((paper) => ({
+      paper,
+      filename: uniqueUploadFilename(`${arxiv.sanitizeArxivId(paper.arxivId)}.pdf`),
+      fileLine: null,
+    }));
+
+    for (const item of lines) {
+      const { paper, filename } = item;
+      try {
+        const buf = await arxiv.downloadPdf(paper.pdfUrl);
+        fs.writeFileSync(path.join(UPLOAD_DIR, filename), buf);
+        downloaded.push(filename);
+        item.fileLine = `-- [PDF: ${filename}](/uploads/${encodeURIComponent(filename)})`;
+      } catch (err) {
+        console.error('[arxiv-search] pdf download failed for', paper.arxivId, err.message);
+        item.fileLine = `-- PDF 자동 다운로드 실패 (초록 페이지에서 직접 받아주세요)`;
+      }
+    }
+
+    const authorLine = (paper) => {
+      const names = paper.authors.filter(Boolean);
+      if (!names.length) return '정보 없음';
+      return names.length > 5 ? `${names.slice(0, 5).join(', ')} 외` : names.join(', ');
+    };
+
+    const body = lines
+      .map(
+        ({ paper, fileLine }) =>
+          `- ${paper.title} (${paper.published.slice(0, 10)})\n` +
+          `-- 저자: ${authorLine(paper)}\n` +
+          `-- [초록 보기](${paper.absUrl})\n` +
+          `${fileLine}`
+      )
+      .join('\n');
+    const snippet = `\n## \u{1F4DA} arXiv 논문 검색 (최근 ${periodLabel}): ${name}\n\n${body}\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, papers, downloaded });
+  } catch (err) {
+    console.error('[arxiv-search] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "첨부 PDF 논문 요약": summarizes a PDF already uploaded and linked on this
+// page (extracted locally via poppler's pdftotext, same tool the video
+// feature uses) into three fixed Korean sections via Ollama.
+app.post('/page/:name/pdf-summary', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const pdf = video.findPdf(body, UPLOAD_DIR);
+    if (!pdf) {
+      return res.status(400).json({ error: '첨부된 PDF를 찾지 못했습니다. 먼저 PDF 파일을 업로드해서 문서에 링크해주세요.' });
+    }
+
+    const pdfTextContent = await video.pdfText(pdf.abs, 8000);
+    if (!pdfTextContent.trim()) {
+      return res.status(400).json({ error: 'PDF에서 텍스트를 추출하지 못했습니다 (스캔본 이미지 PDF일 수 있습니다).' });
+    }
+
+    const summary = await ollama.summarizePaper(name, pdfTextContent);
+    const snippet =
+      `\n## \u{1F4C4} 논문 요약: ${pdf.filename}\n\n` +
+      `- 핵심 기여: ${summary.contribution || '(생성 실패)'}\n` +
+      `- 방법론: ${summary.methodology || '(생성 실패)'}\n` +
+      `- 실험 결과: ${summary.results || '(생성 실패)'}\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, summary, filename: pdf.filename });
+  } catch (err) {
+    console.error('[pdf-summary] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "관련 문서 추천": candidates come from the wiki's own *link* graph (up to
+// 2 hops away, nearest first via wiki.findRelatedPages) - never invented by
+// the model - and Ollama is only asked to explain, in one line each, why an
+// already-established connection exists.
+const RELATED_MAX_RESULTS = 5;
+
+app.post('/page/:name/related-pages', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const related = wiki.findRelatedPages(name, RELATED_MAX_RESULTS);
+    if (!related.length) {
+      return res.json({ ok: true, related: [], message: '이 문서와 링크로 연결된 다른 페이지를 찾지 못했습니다.' });
+    }
+
+    const { body: currentBody } = wiki.readPage(name);
+    const items = [];
+    for (const r of related) {
+      const { body: relatedBody } = wiki.readPage(r.id);
+      let reason = '';
+      try {
+        reason = await ollama.explainRelation(name, currentBody.slice(0, 1500), r.id, relatedBody.slice(0, 1500));
+      } catch (err) {
+        console.error('[related-pages] explain failed for', r.id, err.message);
+      }
+      items.push({ name: r.id, distance: r.distance, reason });
+    }
+
+    const lines = items.map((it) => `- *${it.name}*${it.reason ? `\n-- ${it.reason}` : ''}`).join('\n');
+    const snippet = `\n## \u{1F517} 관련 문서 추천\n\n${lines}\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, related: items });
+  } catch (err) {
+    console.error('[related-pages] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "유튜브 영상 분석 및 요약": Ollama can't watch video, so this finds the
+// first YouTube link anywhere in the page, pulls its actual caption track
+// (auto-generated captions count) via lib/youtube.js, and only THEN asks
+// Ollama to summarize that transcript text. A video with no captions simply
+// can't be summarized this way and returns an error instead of a guess.
+app.post('/page/:name/youtube-summary', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const url = youtube.findYoutubeUrl(body);
+    if (!url) {
+      return res.status(400).json({ error: '첨부된 유튜브 링크를 찾지 못했습니다. 먼저 유튜브 영상 링크를 문서에 추가해주세요.' });
+    }
+
+    const info = await youtube.getVideoInfo(url);
+    let transcript;
+    try {
+      transcript = await youtube.getTranscriptText(url);
+    } catch (err) {
+      console.error('[youtube-summary] transcript fetch failed for', url, err.message);
+      return res
+        .status(400)
+        .json({ error: '이 영상은 자막이 없거나 자막을 가져올 수 없어 요약할 수 없습니다 (자동 생성 자막 포함해서 확인했습니다).' });
+    }
+
+    const result = await ollama.summarizeYoutubeVideo(name, info.title || url, transcript);
+    const pointsLines = result.points.map((p) => `-- ${p}`).join('\n');
+    const snippet =
+      `\n## \u{1F3A5} 유튜브 영상 요약: ${info.title || url}\n\n` +
+      `- 요약: ${result.summary || '(생성 실패)'}\n` +
+      (result.points.length ? `- 핵심 포인트:\n${pointsLines}\n` : '');
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, title: info.title, summary: result.summary, points: result.points });
+  } catch (err) {
+    console.error('[youtube-summary] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "코드로 테스트하기": generates the one function this page's algorithm
+// needs (lib/ollama.js) - process_image or process_audio, whichever the
+// page's own content actually calls for - then actually RUNS it locally
+// against a matching file already attached to the page (lib/codetest.js)
+// and uploads whatever it produces. This is the one AI feature in this app
+// that executes generated code rather than just displaying it - see
+// lib/codetest.js for the (best-effort, not a real sandbox) safety measures
+// around that.
+// Builds { name: value } from the parameter schema's own defaults, coerced
+// to the right JS type (slider -> number, combobox -> string) - used both to
+// run the very first execution and as the starting point for the page's
+// live controls.
+function defaultParamValues(params) {
+  const values = {};
+  for (const p of params) {
+    if (!p || typeof p.name !== 'string') continue;
+    values[p.name] = p.type === 'slider' ? Number(p.default) : p.default;
+  }
+  return values;
+}
+
+// The parameter schema (plus input/output modality) only exists in memory
+// right after generation - for a page reload (or someone else opening the
+// page later) to still show live slider/dropdown controls instead of a dead
+// static result, this needs to travel WITH the saved code itself. A leading
+// Python comment is a harmless place to smuggle it: it doesn't affect
+// execution, and the client-side scanner (public/codetest.js) recovers it
+// later from the rendered code block's own text content.
+const CODETEST_PARAMS_PREFIX = '# CODETEST_PARAMS: ';
+
+function embedParamsComment(code, { inputType, outputType, params }) {
+  if (!params || !params.length) return code;
+  const meta = { input_type: inputType, output_type: outputType, params };
+  return `${CODETEST_PARAMS_PREFIX}${JSON.stringify(meta)}\n${code}`;
+}
+
+// Inverse of embedParamsComment - used by the preview route, which only
+// gets the raw code text back from the browser (not the original
+// generation's separate inputType/outputType/params values), so it has to
+// recover them from the comment the same way the client-side scanner does.
+// Old pages saved before output/input types existed just had a bare params
+// array as the comment body; those are treated as image-in/image-out, which
+// was the only behavior that existed when they were written.
+function parseEmbeddedMeta(code) {
+  const m = code.match(/^#\s*CODETEST_PARAMS:\s*(.+)$/m);
+  if (!m) return { inputType: 'image', outputType: 'image', params: [] };
+  try {
+    const parsed = JSON.parse(m[1]);
+    if (Array.isArray(parsed)) return { inputType: 'image', outputType: 'image', params: parsed };
+    return {
+      inputType: parsed.input_type === 'audio' ? 'audio' : 'image',
+      outputType: parsed.output_type === 'audio' ? 'audio' : 'image',
+      params: Array.isArray(parsed.params) ? parsed.params : [],
+    };
+  } catch {
+    return { inputType: 'image', outputType: 'image', params: [] };
+  }
+}
+
+// Finds the attachment the algorithm actually needs (image or audio,
+// per inputType) and returns an { inputPath, cleanup } pair - for audio,
+// inputPath points at a freshly ffmpeg-converted WAV copy in a scratch
+// directory that `cleanup()` removes afterward; for image, inputPath is
+// just the original upload and cleanup() is a no-op.
+async function resolveCodeTestInput(inputType, body) {
+  if (inputType === 'audio') {
+    const audio = video.findAudio(body, UPLOAD_DIR);
+    if (!audio) {
+      const err = new Error('이 알고리즘은 오디오 입력이 필요합니다. 먼저 입력으로 쓸 오디오 파일을 문서에 업로드해주세요.');
+      err.status = 400;
+      throw err;
+    }
+    const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-codetest-audio-'));
+    const wavPath = path.join(scratchDir, 'input.wav');
+    await video.convertToWav(audio.abs, wavPath);
+    return { inputPath: wavPath, cleanup: () => fs.rmSync(scratchDir, { recursive: true, force: true }) };
+  }
+
+  const image = video.findImage(body, UPLOAD_DIR);
+  if (!image) {
+    const err = new Error('이 알고리즘은 이미지 입력이 필요합니다. 먼저 입력으로 쓸 이미지를 문서에 업로드해주세요.');
+    err.status = 400;
+    throw err;
+  }
+  return { inputPath: image.abs, cleanup: () => {} };
+}
+
+app.post('/page/:name/code-test', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const generated = await ollama.generateImageProcessingCode(name, body.slice(0, 6000));
+    const { inputType, outputType, params } = generated;
+    const code = embedParamsComment(generated.code, generated);
+    const values = defaultParamValues(params);
+
+    let input;
+    try {
+      input = await resolveCodeTestInput(inputType, body);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+
+    let buf;
+    try {
+      const outputExt = outputType === 'audio' ? '.wav' : '.png';
+      buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt });
+    } catch (err) {
+      console.error('[code-test] execution failed for', name, err.message);
+      return res.status(400).json({ error: err.message });
+    } finally {
+      input.cleanup();
+    }
+
+    const outExt = outputType === 'audio' ? 'wav' : 'png';
+    const outFilename = uniqueUploadFilename(`${wiki.sanitizeName(name)}-result-${Date.now()}.${outExt}`);
+    fs.writeFileSync(path.join(UPLOAD_DIR, outFilename), buf);
+
+    // Uploaded audio results use this wiki's plain [label](url) file-link
+    // syntax (which renders as an <audio controls> player for audio
+    // extensions), matching how any other attached audio is shown -
+    // image results keep the existing ![alt](url) inline-image syntax.
+    const resultLine =
+      outputType === 'audio'
+        ? `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})`
+        : `![테스트 결과](/uploads/${encodeURIComponent(outFilename)})`;
+    const snippet = `\n## \u{1F9EA} 코드로 테스트하기 결과\n\n` + `\`\`\`python\n${code}\n\`\`\`\n\n` + `${resultLine}\n`;
+    appendToPage(name, snippet);
+
+    res.json({
+      ok: true,
+      code,
+      codeHtml: wiki.highlightCode(code, 'python'),
+      inputType,
+      outputType,
+      params,
+      values,
+      resultUrl: `/uploads/${encodeURIComponent(outFilename)}`,
+    });
+  } catch (err) {
+    console.error('[code-test] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Live parameter-preview: re-runs the SAME already-generated code (no fresh
+// Ollama call) with new slider/dropdown values from the page, and returns
+// the result as a data URL rather than writing anything to /uploads - a
+// slider being dragged around shouldn't leave a trail of throwaway files
+// behind, or repeatedly rewrite the page's saved markdown. The persisted
+// page content (from the initial click above) always keeps showing the
+// default-parameter result; this endpoint only feeds the live, in-page
+// preview media while the reader is actively experimenting.
+app.post('/page/:name/code-test/preview', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const code = typeof req.body.code === 'string' ? req.body.code : '';
+    if (!code || !/def\s+(process_image|process_audio)\s*\(/.test(code)) {
+      return res.status(400).json({ error: '유효하지 않은 코드입니다.' });
+    }
+    const values = req.body.values && typeof req.body.values === 'object' ? req.body.values : {};
+    const { inputType, outputType } = parseEmbeddedMeta(code);
+
+    const { body } = wiki.readPage(name);
+    let input;
+    try {
+      input = await resolveCodeTestInput(inputType, body);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+
+    try {
+      const outputExt = outputType === 'audio' ? '.wav' : '.png';
+      const buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt });
+      const mime = outputType === 'audio' ? 'audio/wav' : 'image/png';
+      res.json({ ok: true, dataUrl: `data:${mime};base64,${buf.toString('base64')}` });
+    } finally {
+      input.cleanup();
+    }
+  } catch (err) {
+    console.error('[code-test-preview] error', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

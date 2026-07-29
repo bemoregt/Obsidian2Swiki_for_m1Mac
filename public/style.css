@@ -205,6 +205,72 @@ a.file-link:hover { background: #eef; }
   text-align: center;
 }
 
+.arxiv-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+.arxiv-bar-buttons {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pdfsummary-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.relatedpages-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.youtubesummary-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.codetest-bar {
+  margin-top: 12px;
+  text-align: center;
+}
+.codetest-live-controls {
+  margin: 8px 0 16px;
+  max-width: 480px;
+}
+.codetest-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.codetest-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9em;
+}
+.codetest-control-row label {
+  flex: 0 0 auto;
+  min-width: 90px;
+  color: #555;
+}
+.codetest-control-row input[type="range"] {
+  flex: 1 1 auto;
+}
+.codetest-control-row select {
+  flex: 1 1 auto;
+  font-family: inherit;
+}
+.codetest-control-value {
+  flex: 0 0 auto;
+  min-width: 36px;
+  text-align: right;
+  color: #333;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85em;
+}
+
 .page-footer-nav {
   margin-top: 24px;
   padding-top: 12px;
@@ -214,6 +280,8 @@ a.file-link:hover { background: #eef; }
 .page-body h1, .page-body h2, .page-body h3 { margin-top: 1.2em; }
 .page-body p { line-height: 1.6; }
 .page-body hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
+.katex-block { display: block; margin: 1em 0; text-align: center; overflow-x: auto; }
+.katex-inline { display: inline-block; }
 .page-body code {
   font-family: "SFMono-Regular", Menlo, monospace;
   background: #f0f0f0;
@@ -306,6 +374,15 @@ a.wikilink-new {
 .rss-item-title:hover { text-decoration: underline; }
 .rss-item-date { margin: 4px 0; color: #888; font-size: 0.85em; }
 .rss-item-snippet { margin: 4px 0 0; color: #444; font-size: 0.9em; line-height: 1.5; }
+.rss-item-translation {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #f2f7ff;
+  border-left: 3px solid #0000cc;
+}
+.rss-item-translated-title { margin: 0 0 4px; font-weight: bold; color: #001a80; }
+.rss-item-translated-snippet { margin: 0; color: #333; font-size: 0.9em; line-height: 1.5; }
+.rss-translate-bar { margin-top: 20px; text-align: center; }
 
 table.calendar {
   border-collapse: collapse;

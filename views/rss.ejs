@@ -5,15 +5,83 @@
     (피드 리더에 이 주소를 등록하면 구독할 수 있습니다)
   </p>
   <ul class="rss-list">
-    <% items.forEach(function(item) { %>
-      <li class="rss-item">
+    <% items.forEach(function(item, i) { %>
+      <li class="rss-item" data-index="<%= i %>">
         <a class="rss-item-title" href="<%= item.link %>" target="_blank" rel="noopener noreferrer"><%= item.title %></a>
         <% if (item.pubDate) { %><p class="rss-item-date"><%= item.pubDate %></p><% } %>
         <% if (item.snippet) { %><p class="rss-item-snippet"><%= item.snippet %></p><% } %>
+        <div class="rss-item-translation" style="display:none"></div>
       </li>
     <% }); %>
     <% if (!items.length) { %>
       <li>이 피드에는 항목이 없습니다.</li>
     <% } %>
   </ul>
+
+  <% if (items.length) { %>
+  <div class="rss-translate-bar">
+    <button type="button" id="rss-translate-btn" class="btn">🇰🇷 한글로 번역하기</button>
+    <p class="side-hint" id="rss-translate-status"></p>
+  </div>
+
+  <script>
+    (function () {
+      var items = <%- JSON.stringify(items.map(function (it) { return { title: it.title, snippet: it.snippet }; })).replace(/<\//g, '<\\/') %>;
+      var btn = document.getElementById('rss-translate-btn');
+      var status = document.getElementById('rss-translate-status');
+      if (!btn) return;
+
+      function setStatus(text) {
+        if (status) status.textContent = text;
+      }
+
+      function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        setStatus('AI가 한글로 번역하는 중입니다...');
+
+        fetch('/rss-translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: items }),
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.error || '번역 실패');
+              return data;
+            });
+          })
+          .then(function (data) {
+            var translations = data.translations || [];
+            var shown = 0;
+            document.querySelectorAll('.rss-item').forEach(function (li) {
+              var idx = Number(li.dataset.index);
+              var t = translations[idx];
+              var box = li.querySelector('.rss-item-translation');
+              if (!t || !box) return;
+              var html = '';
+              if (t.title) html += '<p class="rss-item-translated-title">🇰🇷 ' + escapeHtml(t.title) + '</p>';
+              if (t.snippet) html += '<p class="rss-item-translated-snippet">' + escapeHtml(t.snippet) + '</p>';
+              if (html) {
+                box.innerHTML = html;
+                box.style.display = '';
+                shown++;
+              }
+            });
+            setStatus(shown ? shown + '개 항목을 번역했습니다.' : '번역 결과를 가져오지 못했습니다.');
+            btn.disabled = false;
+          })
+          .catch(function (err) {
+            setStatus(err.message || '번역에 실패했습니다.');
+            btn.disabled = false;
+          });
+      });
+    })();
+  </script>
+  <% } %>
 <%- include('_footer') %>
