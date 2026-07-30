@@ -322,6 +322,79 @@ pre.mermaid {
 .hljs-decorator, .hljs-meta { color: #3e999f; }
 .hljs-attr, .hljs-variable { color: #b58900; }
 
+.ipynb-viewer {
+  margin: 12px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  background: #fff;
+}
+.ipynb-md-cell {
+  padding: 4px 2px 10px;
+  font-weight: bold;
+  font-size: 1.1em;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 10px;
+}
+.ipynb-cell { margin-bottom: 14px; }
+.ipynb-cell:last-child { margin-bottom: 0; }
+.ipynb-prompt {
+  display: block;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 0.8em;
+  color: #303f9f;
+  margin-bottom: 2px;
+}
+.ipynb-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ipynb-input .ipynb-in-prompt { display: inline; margin-bottom: 0; }
+.ipynb-editor {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: #222;
+  background: #f7f6f0;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  resize: vertical;
+}
+.ipynb-editor:focus { outline: 2px solid #303f9f; outline-offset: -1px; }
+.ipynb-run-btn {
+  font-size: 0.75em;
+  padding: 2px 8px;
+  border: 1px solid #303f9f;
+  border-radius: 3px;
+  background: #eef0fb;
+  color: #303f9f;
+  cursor: pointer;
+}
+.ipynb-run-btn:hover { background: #dde1f7; }
+.ipynb-run-btn:disabled { opacity: 0.6; cursor: default; }
+.ipynb-output { margin-top: 4px; }
+.ipynb-output .ipynb-prompt { color: #b71c1c; }
+.ipynb-stream, .ipynb-error, .ipynb-result {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 2px;
+}
+.ipynb-stream { background: #fafafa; }
+.ipynb-stderr { background: #fff8e1; }
+.ipynb-error { background: #fdecea; color: #b71c1c; }
+.ipynb-result { background: #f5f5f5; }
+
 /* A tiny cursor drift while clicking (common on trackpads) makes the browser
    start a text selection instead of registering the click, since the link's
    own characters are selectable text - the dashed underline below them isn't,

@@ -12,7 +12,7 @@
     btn.addEventListener('click', function () {
       if (!currentName) return;
       btn.disabled = true;
-      setStatus('AI가 코드를 생성하고 첨부된 이미지/오디오로 실행하는 중입니다... (최대 1분 정도 걸릴 수 있습니다)');
+      setStatus('AI가 코드를 생성하고 첨부된 이미지/오디오/비디오로 실행하는 중입니다... (비디오는 최대 3분 정도 걸릴 수 있습니다)');
 
       fetch('/page/' + encodeURIComponent(currentName) + '/code-test', { method: 'POST' })
         .then(function (r) {
@@ -96,10 +96,11 @@
   }
 
   // mediaEl is whichever element actually shows the saved result - an
-  // <img class="wiki-img"> for image output, or an <audio class="wiki-audio">
-  // for audio output. Both expose a plain .src property, so swapping in a
-  // fresh data: URL from the preview endpoint works identically either way -
-  // this function doesn't otherwise need to know or care which one it is.
+  // <img class="wiki-img"> for image output, <audio class="wiki-audio"> for
+  // audio, or <video class="wiki-video"> for video. All three expose a
+  // plain .src property, so swapping in a fresh data: URL from the preview
+  // endpoint works identically either way - this function doesn't
+  // otherwise need to know or care which one it is.
   function setupLivePanel(pageName, codeText, mediaEl, params) {
     var values = {};
     params.forEach(function (p) {
@@ -181,7 +182,9 @@
       var afterEl = pre && pre.nextElementSibling;
       var mediaEl =
         afterEl && afterEl.querySelector
-          ? afterEl.querySelector('img.wiki-img') || afterEl.querySelector('audio.wiki-audio')
+          ? afterEl.querySelector('img.wiki-img') ||
+            afterEl.querySelector('audio.wiki-audio') ||
+            afterEl.querySelector('video.wiki-video')
           : null;
       if (!mediaEl) return;
 

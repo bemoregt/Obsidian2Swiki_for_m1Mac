@@ -11,6 +11,8 @@ const video = require('./lib/video');
 const arxiv = require('./lib/arxiv');
 const youtube = require('./lib/youtube');
 const codetest = require('./lib/codetest');
+const notebook = require('./lib/notebook');
+const kernel = require('./lib/kernel');
 
 const rssParser = new RSSParser();
 
@@ -563,6 +565,175 @@ app.post('/page/:name/pdf-summary', async (req, res) => {
   }
 });
 
+// "이력서 최적화하기": reads an attached .docx resume (extracted to markdown
+// via pandoc, see lib/video.js) and the page's own body text (expected to
+// describe the target company/job posting), asks Ollama to reword/reorder
+// the resume to match that posting without inventing new history, then
+// renders the result back into a real .docx (pandoc again) and attaches it.
+app.post('/page/:name/resume-optimize', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const resume = video.findDocx(body, UPLOAD_DIR);
+    if (!resume) {
+      return res
+        .status(400)
+        .json({ error: '첨부된 이력서(.docx) 파일을 찾지 못했습니다. 먼저 이력서 파일을 업로드해서 문서에 링크해주세요.' });
+    }
+
+    const resumeMarkdown = await video.docxToMarkdown(resume.abs);
+    if (!resumeMarkdown.trim()) {
+      return res.status(400).json({ error: '이력서에서 텍스트를 추출하지 못했습니다.' });
+    }
+
+    const { optimizedMarkdown, changes } = await ollama.optimizeResume(body, resumeMarkdown);
+
+    const outFilename = uniqueUploadFilename(`${wiki.sanitizeName(name)}-최적화이력서.docx`);
+    const outPath = path.join(UPLOAD_DIR, outFilename);
+    await video.markdownToDocx(optimizedMarkdown, outPath);
+
+    const changesList = changes
+      ? changes
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .join('\n')
+      : '- (변경사항 요약 생성 실패)';
+    const snippet =
+      `\n## \u{1F4DD} 이력서 최적화 결과\n\n` +
+      `- 원본: ${resume.filename}\n` +
+      `- 주요 변경사항:\n${changesList}\n\n` +
+      `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})\n`;
+    appendToPage(name, snippet);
+
+    res.json({ ok: true, filename: outFilename, changes });
+  } catch (err) {
+    console.error('[resume-optimize] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pulls the Python source this feature should convert: prefers a
+// ```python fenced code block already in the page body (the same place
+// "코드로 테스트하기" saves its results), falling back to an attached .py
+// file if no fenced block exists.
+function extractPythonSource(body, uploadDir) {
+  const fenced = body.match(/```python\r?\n([\s\S]*?)```/);
+  if (fenced) return { code: fenced[1], sourceLabel: '문서 안 코드 블록' };
+  const pyFile = video.findPy(body, uploadDir);
+  if (pyFile) return { code: fs.readFileSync(pyFile.abs, 'utf8'), sourceLabel: pyFile.filename };
+  return null;
+}
+
+// "주피터 노트북으로 변경": converts the page's attached Python code into a
+// real, runnable .ipynb (hand-built nbformat-4.5 JSON - no nbformat/jupyter
+// package installed, but the format is just documented JSON) and renders it
+// inline as an actual per-cell interactive notebook - each cell gets its own
+// "▶ 실행" button (lib/notebook.js's renderNotebookHtml, wired up by
+// lib/wiki.js), backed by a real persistent Python process per page
+// (lib/kernel.js + lib/kernel_worker.py) so cells share state across
+// separate button clicks exactly like a real Jupyter kernel's global scope,
+// rather than a fresh interpreter per click. Shares codetest's safety
+// blocklist since this runs server-provided code directly on the host.
+function notebookFilenameFor(name) {
+  return `${wiki.sanitizeName(name)}.ipynb`;
+}
+
+function persistNotebookSession(name, cells) {
+  const nb = notebook.buildNotebookJson(name, cells);
+  const outFilename = notebookFilenameFor(name);
+  fs.writeFileSync(path.join(UPLOAD_DIR, outFilename), JSON.stringify(nb, null, 1));
+  const snippet =
+    `\n## \u{1F4D3} 주피터 노트북으로 변경\n\n` +
+    `- 각 셀의 ▶ 실행 버튼을 눌러 순서대로 하나씩 실행하세요 (이전 셀에서 만든 변수를 다음 셀에서 그대로 쓸 수 있습니다).\n\n` +
+    `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})\n`;
+  replaceSection(name, '\u{1F4D3} 주피터 노트북으로 변경', snippet);
+  return outFilename;
+}
+
+// Parses fresh cells from the page and starts a brand new kernel session
+// for it - used both by the explicit "(재)시작" click and, transparently,
+// by run-cell when no session exists yet (server restarted, kernel idled
+// out, or this is the very first run).
+function startNotebookSession(name, body) {
+  const source = extractPythonSource(body, UPLOAD_DIR);
+  if (!source) {
+    const err = new Error('변환할 파이썬 코드를 찾지 못했습니다. 문서에 ```python 코드 블록을 넣거나 .py 파일을 첨부해주세요.');
+    err.status = 400;
+    throw err;
+  }
+  const sources = notebook.parseCodeIntoCells(source.code);
+  if (!sources.length) {
+    const err = new Error('코드에서 실행 가능한 내용을 찾지 못했습니다.');
+    err.status = 400;
+    throw err;
+  }
+  sources.forEach((s) => codetest.checkCodeSafety(s));
+
+  const k = kernel.startKernel(name);
+  k.cells = sources.map((s) => ({ source: s, execution_count: null, outputs: [] }));
+  return k;
+}
+
+app.post('/page/:name/to-notebook', (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+    const { body } = wiki.readPage(name);
+
+    const k = startNotebookSession(name, body);
+    persistNotebookSession(name, k.cells);
+
+    res.json({ ok: true, cellCount: k.cells.length });
+  } catch (err) {
+    console.error('[to-notebook] error', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post('/page/:name/notebook/run-cell', async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+    const index = Number(req.body && req.body.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: 'invalid cell index' });
+    }
+
+    let k = kernel.getKernel(name);
+    if (!k) {
+      const { body } = wiki.readPage(name);
+      k = startNotebookSession(name, body);
+    }
+    if (index >= k.cells.length) {
+      return res.status(400).json({ error: '더 이상 셀이 없습니다. 노트북을 다시 시작해주세요.' });
+    }
+
+    const cellState = k.cells[index];
+    // The client sends the textarea's *current* value, which may differ from
+    // what this cell last ran (the user edited it in place) - that becomes
+    // the cell's new source going forward, same as editing a real Jupyter
+    // cell before pressing run.
+    const editedCode = typeof req.body.code === 'string' ? req.body.code : cellState.source;
+    codetest.checkCodeSafety(editedCode);
+
+    const result = await kernel.runCell(name, editedCode);
+    k.execCounter = (k.execCounter || 0) + 1;
+    cellState.source = editedCode;
+    cellState.execution_count = k.execCounter;
+    cellState.outputs = result.outputs;
+
+    persistNotebookSession(name, k.cells);
+
+    res.json({ ok: true, index, execution_count: cellState.execution_count, outputs: cellState.outputs });
+  } catch (err) {
+    console.error('[notebook/run-cell] error', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // "관련 문서 추천": candidates come from the wiki's own *link* graph (up to
 // 2 hops away, nearest first via wiki.findRelatedPages) - never invented by
 // the model - and Ollama is only asked to explain, in one line each, why an
@@ -689,14 +860,15 @@ function embedParamsComment(code, { inputType, outputType, params }) {
 // array as the comment body; those are treated as image-in/image-out, which
 // was the only behavior that existed when they were written.
 function parseEmbeddedMeta(code) {
+  const validType = (v) => (v === 'audio' || v === 'video' ? v : 'image');
   const m = code.match(/^#\s*CODETEST_PARAMS:\s*(.+)$/m);
   if (!m) return { inputType: 'image', outputType: 'image', params: [] };
   try {
     const parsed = JSON.parse(m[1]);
     if (Array.isArray(parsed)) return { inputType: 'image', outputType: 'image', params: parsed };
     return {
-      inputType: parsed.input_type === 'audio' ? 'audio' : 'image',
-      outputType: parsed.output_type === 'audio' ? 'audio' : 'image',
+      inputType: validType(parsed.input_type),
+      outputType: validType(parsed.output_type),
       params: Array.isArray(parsed.params) ? parsed.params : [],
     };
   } catch {
@@ -704,11 +876,15 @@ function parseEmbeddedMeta(code) {
   }
 }
 
-// Finds the attachment the algorithm actually needs (image or audio,
-// per inputType) and returns an { inputPath, cleanup } pair - for audio,
+const CODE_TEST_OUTPUT_EXT = { image: '.png', audio: '.wav', video: '.mp4' };
+const CODE_TEST_OUTPUT_MIME = { image: 'image/png', audio: 'audio/wav', video: 'video/mp4' };
+
+// Finds the attachment the algorithm actually needs (image/audio/video, per
+// inputType) and returns an { inputPath, cleanup } pair - for audio,
 // inputPath points at a freshly ffmpeg-converted WAV copy in a scratch
-// directory that `cleanup()` removes afterward; for image, inputPath is
-// just the original upload and cleanup() is a no-op.
+// directory that `cleanup()` removes afterward; image and video are handed
+// to the generated code as their original upload path unchanged (cv2 reads
+// both directly via its own ffmpeg backend), so cleanup() is a no-op there.
 async function resolveCodeTestInput(inputType, body) {
   if (inputType === 'audio') {
     const audio = video.findAudio(body, UPLOAD_DIR);
@@ -723,6 +899,16 @@ async function resolveCodeTestInput(inputType, body) {
     return { inputPath: wavPath, cleanup: () => fs.rmSync(scratchDir, { recursive: true, force: true }) };
   }
 
+  if (inputType === 'video') {
+    const vid = video.findVideo(body, UPLOAD_DIR);
+    if (!vid) {
+      const err = new Error('이 알고리즘은 비디오 입력이 필요합니다. 먼저 입력으로 쓸 비디오 파일을 문서에 업로드해주세요.');
+      err.status = 400;
+      throw err;
+    }
+    return { inputPath: vid.abs, cleanup: () => {} };
+  }
+
   const image = video.findImage(body, UPLOAD_DIR);
   if (!image) {
     const err = new Error('이 알고리즘은 이미지 입력이 필요합니다. 먼저 입력으로 쓸 이미지를 문서에 업로드해주세요.');
@@ -730,6 +916,25 @@ async function resolveCodeTestInput(inputType, body) {
     throw err;
   }
   return { inputPath: image.abs, cleanup: () => {} };
+}
+
+// A generated process_video()'s own cv2.VideoWriter output is whatever
+// codec/container it happened to pick, which is not reliably something a
+// browser can play - re-encode to plain H.264 MP4 (ffmpeg auto-detects the
+// real bitstream regardless of what extension runProcess gave it) before
+// this ever reaches a page. No-op for image/audio output.
+async function finalizeOutputBuffer(buf, outputType) {
+  if (outputType !== 'video') return buf;
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-codetest-reencode-'));
+  try {
+    const rawPath = path.join(scratchDir, 'raw.mp4');
+    const finalPath = path.join(scratchDir, 'final.mp4');
+    fs.writeFileSync(rawPath, buf);
+    await video.reencodeToMp4(rawPath, finalPath);
+    return fs.readFileSync(finalPath);
+  } finally {
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
 }
 
 app.post('/page/:name/code-test', async (req, res) => {
@@ -752,8 +957,10 @@ app.post('/page/:name/code-test', async (req, res) => {
 
     let buf;
     try {
-      const outputExt = outputType === 'audio' ? '.wav' : '.png';
-      buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt });
+      const outputExt = CODE_TEST_OUTPUT_EXT[outputType];
+      const timeoutMs = inputType === 'video' ? codetest.VIDEO_RUN_TIMEOUT_MS : undefined;
+      buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt, timeoutMs });
+      buf = await finalizeOutputBuffer(buf, outputType);
     } catch (err) {
       console.error('[code-test] execution failed for', name, err.message);
       return res.status(400).json({ error: err.message });
@@ -761,18 +968,20 @@ app.post('/page/:name/code-test', async (req, res) => {
       input.cleanup();
     }
 
-    const outExt = outputType === 'audio' ? 'wav' : 'png';
-    const outFilename = uniqueUploadFilename(`${wiki.sanitizeName(name)}-result-${Date.now()}.${outExt}`);
+    const outFilename = uniqueUploadFilename(
+      `${wiki.sanitizeName(name)}-result-${Date.now()}${CODE_TEST_OUTPUT_EXT[outputType]}`
+    );
     fs.writeFileSync(path.join(UPLOAD_DIR, outFilename), buf);
 
-    // Uploaded audio results use this wiki's plain [label](url) file-link
-    // syntax (which renders as an <audio controls> player for audio
-    // extensions), matching how any other attached audio is shown -
-    // image results keep the existing ![alt](url) inline-image syntax.
+    // Uploaded audio/video results use this wiki's plain [label](url)
+    // file-link syntax (which renders as an <audio>/<video controls> player
+    // based on the extension, matching how any other attached media is
+    // shown) - image results keep the existing ![alt](url) inline-image
+    // syntax.
     const resultLine =
-      outputType === 'audio'
-        ? `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})`
-        : `![테스트 결과](/uploads/${encodeURIComponent(outFilename)})`;
+      outputType === 'image'
+        ? `![테스트 결과](/uploads/${encodeURIComponent(outFilename)})`
+        : `[${outFilename}](/uploads/${encodeURIComponent(outFilename)})`;
     const snippet = `\n## \u{1F9EA} 코드로 테스트하기 결과\n\n` + `\`\`\`python\n${code}\n\`\`\`\n\n` + `${resultLine}\n`;
     appendToPage(name, snippet);
 
@@ -806,7 +1015,7 @@ app.post('/page/:name/code-test/preview', async (req, res) => {
     if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
 
     const code = typeof req.body.code === 'string' ? req.body.code : '';
-    if (!code || !/def\s+(process_image|process_audio)\s*\(/.test(code)) {
+    if (!code || !/def\s+(process_image|process_audio|process_video)\s*\(/.test(code)) {
       return res.status(400).json({ error: '유효하지 않은 코드입니다.' });
     }
     const values = req.body.values && typeof req.body.values === 'object' ? req.body.values : {};
@@ -821,10 +1030,11 @@ app.post('/page/:name/code-test/preview', async (req, res) => {
     }
 
     try {
-      const outputExt = outputType === 'audio' ? '.wav' : '.png';
-      const buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt });
-      const mime = outputType === 'audio' ? 'audio/wav' : 'image/png';
-      res.json({ ok: true, dataUrl: `data:${mime};base64,${buf.toString('base64')}` });
+      const outputExt = CODE_TEST_OUTPUT_EXT[outputType];
+      const timeoutMs = inputType === 'video' ? codetest.VIDEO_RUN_TIMEOUT_MS : undefined;
+      let buf = await codetest.runProcess({ code, inputPath: input.inputPath, params: values, outputExt, timeoutMs });
+      buf = await finalizeOutputBuffer(buf, outputType);
+      res.json({ ok: true, dataUrl: `data:${CODE_TEST_OUTPUT_MIME[outputType]};base64,${buf.toString('base64')}` });
     } finally {
       input.cleanup();
     }
@@ -865,6 +1075,19 @@ async function prepareSlideSource(name) {
 function appendToPage(name, snippet) {
   const current = wiki.readPage(name).body;
   wiki.writePage(name, `${current.replace(/\s+$/, '')}\n${snippet}`);
+}
+
+// Like appendToPage, but first strips any previous "## <headingText>"
+// section (up to the next "## " heading or end of file) before appending
+// the new one - for features meant to be re-run repeatedly (like "주피터
+// 노트북으로 변경"), where appendToPage's plain accumulation would otherwise
+// pile up a duplicate section on every click.
+function replaceSection(name, headingText, snippet) {
+  const current = wiki.readPage(name).body;
+  const escaped = headingText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const sectionRe = new RegExp(`\\n##\\s+${escaped}[\\s\\S]*?(?=\\n##\\s|$)`, 'u');
+  const withoutOld = current.replace(sectionRe, '');
+  wiki.writePage(name, `${withoutOld.replace(/\s+$/, '')}\n${snippet}`);
 }
 
 // "유튜브 영상 만들기": if the page links to an uploaded audio file and an

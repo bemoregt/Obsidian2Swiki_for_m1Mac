@@ -78,6 +78,16 @@
     <p class="side-hint" id="codetest-status"></p>
   </div>
 
+  <div class="resumeoptimize-bar">
+    <button type="button" id="resumeoptimize-btn" class="btn">📝 이력서 최적화하기</button>
+    <p class="side-hint" id="resumeoptimize-status"></p>
+  </div>
+
+  <div class="tonotebook-bar">
+    <button type="button" id="tonotebook-btn" class="btn">📓 주피터 노트북으로 변경</button>
+    <p class="side-hint" id="tonotebook-status"></p>
+  </div>
+
   <div class="page-footer-nav">
     <a class="btn" id="up-btn" style="display:none"></a>
   </div>
@@ -94,6 +104,8 @@
   <script src="/static/relatedpages.js"></script>
   <script src="/static/youtubesummary.js"></script>
   <script src="/static/codetest.js"></script>
+  <script src="/static/resumeoptimize.js"></script>
+  <script src="/static/tonotebook.js"></script>
   <% if (html.includes('class="mermaid"')) { %>
     <script src="/static/vendor/mermaid.min.js"></script>
     <script>mermaid.initialize({ startOnLoad: true });</script>
