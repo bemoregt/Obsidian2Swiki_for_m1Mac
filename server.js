@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFileSync } = require('child_process');
 const multer = require('multer');
 const RSSParser = require('rss-parser');
 const wiki = require('./lib/wiki');
@@ -1045,6 +1046,186 @@ app.post('/page/:name/code-test/preview', async (req, res) => {
 });
 
 const SHORTS_MAX_SECONDS = 180;
+
+// Section heading used by "openFrameworks 앱 코드 만들기" - re-running the
+// button replaces this whole section (via replaceSection) instead of piling
+// up another copy on every click.
+const OF_PROJECT_HEADING = '⚙️ OpenFrameworks 앱 코드';
+
+// "openFrameworks 앱 코드 만들기": asks Ollama to write a complete
+// openFrameworks (C++) project - src/main.cpp, src/ofApp.h, src/ofApp.cpp -
+// for the app this page describes, zips the whole src/ tree plus a short
+// build note into /uploads, and shows each generated file's code on the page
+// so it can be read (or copied out) without downloading anything. The zip is
+// a bonus convenience, not the point: the code lives on the page itself.
+app.post('/page/:name/openframeworks-code', requireIndexAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const files = await ollama.generateOpenFrameworksCode(name, body.slice(0, 6000));
+
+    // Page names are often Korean - collapse to a safe ASCII slug, and strip
+    // leading/trailing '-' / '.' so the name can never be misread as a shell
+    // or zip option flag.
+    const projectName =
+      (wiki.sanitizeName(name) || 'of-app')
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^[-.]+/, '')
+        .replace(/[-.]+$/, '') || 'of-app';
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-of-'));
+    const projectRoot = path.join(workDir, projectName);
+    let zipName = null;
+    try {
+      fs.mkdirSync(path.join(projectRoot, 'src'), { recursive: true });
+      for (const f of files) {
+        // Filenames come straight from the model - refuse anything that would
+        // escape the project root before it touches disk.
+        const abs = path.resolve(projectRoot, f.filename);
+        if (abs !== projectRoot && !abs.startsWith(projectRoot + path.sep)) continue;
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, f.code.endsWith('\n') ? f.code : `${f.code}\n`);
+      }
+      fs.writeFileSync(path.join(projectRoot, 'README.md'), ofProjectReadme(projectName, name));
+
+      zipName = uniqueUploadFilename(`${projectName}-of-app.zip`);
+      execFileSync('zip', ['-r', '-q', path.join(UPLOAD_DIR, zipName), projectName], { cwd: workDir });
+    } catch (err) {
+      console.error('[openframeworks-code] zip failed', err);
+      throw new Error('앱 코드 압축 파일 생성에 실패했습니다.');
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+
+    const sections = files
+      .map((f) => `### ${f.filename}\n\n\`\`\`cpp\n${f.code}\n\`\`\`\n`)
+      .join('');
+    const snippet =
+      `\n## ${OF_PROJECT_HEADING}\n\n` +
+      `이 문서가 설명하는 앱을 만드는 openFrameworks(C++) 프로젝트 코드입니다. ` +
+      `전체 프로젝트(src/ + 실행 방법) 압축파일: [${zipName}](/uploads/${encodeURIComponent(zipName)})\n\n` +
+      `${sections}`;
+    replaceSection(name, OF_PROJECT_HEADING, snippet);
+
+    res.json({ ok: true, files, zipName });
+  } catch (err) {
+    console.error('[openframeworks-code] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Plain-text build note shipped inside the generated project zip - explains
+// that the src/ tree drops straight into the project generator's default
+// template, since a full openFrameworks install is way bigger than what a
+// wiki should be hosting.
+function ofProjectReadme(projectName, pageName) {
+  return (
+    `# ${projectName}\n\n` +
+    `이 openFrameworks 프로젝트 코드는 위키 페이지 "*${pageName}*"의 내용을 바탕으로 AI가 생성한 것입니다.\n\n` +
+    '## 실행 방법\n\n' +
+    '1. openFrameworks(https://openframeworks.cc/download/)를 설치합니다.\n' +
+    '2. 프로젝트 생성기(projectGenerator)로 빈 기본 프로젝트를 하나 만듭니다.\n' +
+    '3. 이 압축파일의 src/ 폴더 안 main.cpp, ofApp.h, ofApp.cpp로, 새 프로젝트의 src/ 내용을 전부 교체합니다.\n' +
+    '4. make 또는 IDE로 빌드한 뒤 실행합니다. (이 코드는 openFrameworks 핵심 API만 사용하므로 추가 애드온이 필요 없습니다.)\n\n' +
+    '## 프로젝트 구조\n\n' +
+    `    ${projectName}/\n` +
+    '    ├── src/\n' +
+    '    │   ├── main.cpp   - 앱 시작점 (ofSetupOpenGL + ofRunApp)\n' +
+    '    │   ├── ofApp.h    - ofApp 클래스 선언\n' +
+    '    │   └── ofApp.cpp  - setup/update/draw 구현\n' +
+    '    └── README.md      - 이 파일\n'
+  );
+}
+
+// Section heading for "Swift iOS 앱 코드 만들기" - same replace-on-rerun
+// behavior as the openFrameworks feature above.
+const SWIFT_PROJECT_HEADING = '🍎 Swift iOS 앱 코드';
+
+// "Swift iOS 앱 코드 만들기": asks Ollama to write a complete SwiftUI iOS
+// app - App.swift + ContentView.swift - for the app this page describes,
+// zips both files plus a short build note into /uploads, and shows each
+// generated file's code on the page. The zip is a bonus convenience, not the
+// point: the code lives on the page itself, exactly like the openFrameworks
+// button. Dropping the two files into a fresh Xcode "iOS App" template is
+// all it takes to run, since the model is told to stick to Apple's own
+// frameworks only.
+app.post('/page/:name/swift-code', requireIndexAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!wiki.pageExists(name)) return res.status(404).json({ error: 'page not found' });
+
+    const { body } = wiki.readPage(name);
+    const files = await ollama.generateSwiftCode(name, body.slice(0, 6000));
+
+    // Page names are often Korean - collapse to a safe ASCII slug, and strip
+    // leading/trailing '-' / '.' so the name can never be misread as a shell
+    // or zip option flag.
+    const projectName =
+      (wiki.sanitizeName(name) || 'swift-app')
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^[-.]+/, '')
+        .replace(/[-.]+$/, '') || 'swift-app';
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'o2s-swift-'));
+    const projectRoot = path.join(workDir, projectName);
+    let zipName = null;
+    try {
+      fs.mkdirSync(projectRoot, { recursive: true });
+      for (const f of files) {
+        // Filenames come straight from the model - refuse anything that would
+        // escape the project root before it touches disk.
+        const abs = path.resolve(projectRoot, f.filename);
+        if (abs !== projectRoot && !abs.startsWith(projectRoot + path.sep)) continue;
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, f.code.endsWith('\n') ? f.code : `${f.code}\n`);
+      }
+      fs.writeFileSync(path.join(projectRoot, 'README.md'), swiftProjectReadme(projectName, name));
+
+      zipName = uniqueUploadFilename(`${projectName}-ios-app.zip`);
+      execFileSync('zip', ['-r', '-q', path.join(UPLOAD_DIR, zipName), projectName], { cwd: workDir });
+    } catch (err) {
+      console.error('[swift-code] zip failed', err);
+      throw new Error('앱 코드 압축 파일 생성에 실패했습니다.');
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+
+    const sections = files
+      .map((f) => `### ${f.filename}\n\n\`\`\`swift\n${f.code}\n\`\`\`\n`)
+      .join('');
+    const snippet =
+      `\n## ${SWIFT_PROJECT_HEADING}\n\n` +
+      `이 문서가 설명하는 앱을 만드는 SwiftUI(iOS) 프로젝트 코드입니다. ` +
+      `전체 프로젝트(파일 + 실행 방법) 압축파일: [${zipName}](/uploads/${encodeURIComponent(zipName)})\n\n` +
+      `${sections}`;
+    replaceSection(name, SWIFT_PROJECT_HEADING, snippet);
+
+    res.json({ ok: true, files, zipName });
+  } catch (err) {
+    console.error('[swift-code] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Plain-text build note shipped inside the generated Swift project zip -
+// explains that the two files drop straight into Xcode's "iOS App" template,
+// since a full .xcodeproj (a plist-based binary bundle) is way bigger than
+// what a wiki should be hosting.
+function swiftProjectReadme(projectName, pageName) {
+  return (
+    `# ${projectName}\n\n` +
+    `이 SwiftUI(iOS) 앱 코드는 위키 페이지 "*${pageName}*"의 내용을 바탕으로 AI가 생성한 것입니다.\n\n` +
+    '## 실행 방법\n\n' +
+    '1. Xcode를 열고 새 프로젝트(File > New > Project)에서 "iOS App" 템플릿을 선택합니다.\n' +
+    '2. 이 압축파일 안 App.swift, ContentView.swift 두 파일을 프로젝트의 소스 폴더에 추가합니다 (기존에 있던 같은 이름의 파일은 교체).\n' +
+    '3. 시뮬레이터 또는 실제 기기에서 빌드(Cmd+R)해 실행합니다. (Apple 시스템 프레임워크만 사용하므로 외부 패키지가 필요 없습니다.)\n\n' +
+    '## 프로젝트 구조\n\n' +
+    `    ${projectName}/\n` +
+    '    ├── App.swift        - @main 앱 진입점 (WindowGroup + ContentView)\n' +
+    '    ├── ContentView.swift- 메인 화면(뷰) 전체 구현\n' +
+    '    └── README.md        - 이 파일\n'
+  );
+}
 
 // Shared by /make-video and /make-shorts: locates the page's linked audio +
 // PDF, renders the PDF to page images, and reads the audio duration. Caller

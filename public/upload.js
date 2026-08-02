@@ -31,24 +31,27 @@
     });
   }
 
-  function uploadFile(file, cursorStart, cursorEnd) {
+  // Uploads a single file and returns {snippet, filename}. The caller decides
+  // where the snippet goes (cursor vs. page append).
+  function requestUpload(file) {
     var formData = new FormData();
     formData.append('file', file);
-    setStatus('업로드 중...');
-
-    return fetch('/upload', { method: 'POST', body: formData })
-      .then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (data) {
-          if (!r.ok) throw new Error(data.error || '업로드 실패');
-          return data;
-        });
-      })
-      .then(function (data) {
+    return fetch('/upload', { method: 'POST', body: formData }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) throw new Error(data.error || '업로드 실패');
         var snippet = data.isImage
           ? '![' + data.filename + '](' + data.url + ')'
           : '[' + data.filename + '](' + data.url + ')';
+        return { snippet: snippet, filename: data.filename };
+      });
+    });
+  }
 
-        if (insertSnippetAtCursor(snippet, cursorStart, cursorEnd)) {
+  function uploadFile(file, cursorStart, cursorEnd) {
+    setStatus('업로드 중...');
+    requestUpload(file)
+      .then(function (data) {
+        if (insertSnippetAtCursor(data.snippet, cursorStart, cursorEnd)) {
           setStatus('업로드 완료: ' + data.filename);
           return;
         }
@@ -56,7 +59,7 @@
         var pageName = currentViewPageName();
         if (pageName) {
           setStatus('업로드 완료, 문서 끝에 추가 중...');
-          return appendToCurrentPage(pageName, snippet).then(function () {
+          return appendToCurrentPage(pageName, data.snippet).then(function () {
             location.reload();
           });
         }
@@ -80,6 +83,140 @@
       });
     });
   }
+
+  // --- Drag & drop ---
+  // Drop files anywhere on the page. In edit mode the snippet goes into the
+  // editor (at the caret, or at the end if the editor isn't focused); in view
+  // mode it is appended to the current page - so an mp4 (or any file) dragged
+  // in gets uploaded and attached just like choosing it via the 📤 button.
+
+  var overlay = document.getElementById('drop-overlay');
+  var dragDepth = 0;
+
+  function hideOverlay() {
+    dragDepth = 0;
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  function isFileDrag(e) {
+    var dt = e.dataTransfer;
+    return dt && dt.types && Array.prototype.indexOf.call(dt.types, 'Files') !== -1;
+  }
+
+  function insertionPoint() {
+    if (editor) {
+      if (document.activeElement === editor) {
+        return { start: editor.selectionStart, end: editor.selectionEnd };
+      }
+      return { start: editor.value.length, end: editor.value.length };
+    }
+    return null;
+  }
+
+  function insertInEditor(items, pos) {
+    var total = items.length;
+    var failed = [];
+    var cursor = { start: pos.start, end: pos.end };
+    setStatus(total + '개 파일 업로드 중...');
+
+    function next(i) {
+      if (i >= total) {
+        if (failed.length) {
+          setStatus((total - failed.length) + '개 업로드 완료, ' + failed.length + '개 실패: ' + failed.join(', '));
+        } else {
+          setStatus(total + '개 파일 업로드 완료');
+        }
+        return;
+      }
+      requestUpload(items[i])
+        .then(function (data) {
+          var separator = i < total - 1 ? '\n' : '';
+          if (insertSnippetAtCursor(data.snippet + separator, cursor.start, cursor.end)) {
+            cursor.start = cursor.end = cursor.start + data.snippet.length + separator.length;
+          }
+          next(i + 1);
+        })
+        .catch(function (err) {
+          failed.push(items[i].name);
+          next(i + 1);
+        });
+    }
+
+    next(0);
+  }
+
+  function appendInView(items) {
+    var pageName = currentViewPageName();
+    if (!pageName) {
+      setStatus('문서 보기/편집 화면에서 파일을 놓아주세요');
+      return;
+    }
+    setStatus(items.length + '개 파일 업로드 후 문서 끝에 추가 중...');
+    Promise.all(items.map(requestUpload))
+      .then(function (results) {
+        return appendToCurrentPage(pageName, results.map(function (d) { return d.snippet; }).join('\n'));
+      })
+      .then(function () {
+        location.reload();
+      })
+      .catch(function (err) {
+        setStatus(err.message || '업로드 실패');
+      });
+  }
+
+  function handleDrop(files) {
+    var items = Array.prototype.slice.call(files).filter(function (f) {
+      return f && typeof f.size === 'number';
+    });
+    if (!items.length) return;
+
+    var pos = insertionPoint();
+    if (pos) insertInEditor(items, pos);
+    else appendInView(items);
+  }
+
+  if (editor) {
+    editor.addEventListener('dragover', function (e) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      editor.classList.add('drop-active');
+    });
+    editor.addEventListener('dragleave', function () {
+      editor.classList.remove('drop-active');
+    });
+    editor.addEventListener('drop', function (e) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      editor.classList.remove('drop-active');
+      hideOverlay();
+      handleDrop(e.dataTransfer.files);
+    });
+  }
+
+  document.addEventListener('dragenter', function (e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    if (overlay) overlay.style.display = 'flex';
+  });
+  document.addEventListener('dragover', function (e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  document.addEventListener('dragleave', function (e) {
+    if (!isFileDrag(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0 && overlay) overlay.style.display = 'none';
+  });
+  document.addEventListener('drop', function (e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    hideOverlay();
+    handleDrop(e.dataTransfer.files);
+  });
 
   // Paste an image straight from the clipboard at the cursor position.
   if (editor) {

@@ -101,6 +101,24 @@ body {
 }
 .file-upload-label { cursor: pointer; }
 
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(214, 230, 255, 0.85);
+  font-size: 1.6em;
+  font-weight: bold;
+  color: #001a80;
+  pointer-events: none;
+}
+#editor.drop-active {
+  outline: 3px dashed #6699cc;
+  outline-offset: -3px;
+}
+
 .wiki-img {
   display: block;
   max-width: 100%;
