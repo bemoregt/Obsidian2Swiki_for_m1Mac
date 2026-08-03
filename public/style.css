@@ -133,6 +133,15 @@ a.file-link {
 }
 a.file-link:hover { background: #eef; }
 
+a.finder-link {
+  display: inline-block;
+  color: #0057b8;
+  text-decoration: none;
+  border-bottom: 1px dashed #0057b8;
+  cursor: pointer;
+}
+a.finder-link:hover { background: #eef4ff; }
+
 .wiki-audio {
   display: block;
   width: 100%;

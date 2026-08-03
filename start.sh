@@ -10,7 +10,13 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   echo "Already running (pid $(cat "$PIDFILE"))."
   exit 0
 fi
-setsid nohup node server.js >> "$LOG" 2>&1 < /dev/null &
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup node server.js >> "$LOG" 2>&1 < /dev/null &
+else
+  # macOS has no setsid (util-linux only) - nohup alone still detaches
+  # the process from the terminal, which is all we need here.
+  nohup node server.js >> "$LOG" 2>&1 < /dev/null &
+fi
 echo $! > "$PIDFILE"
 sleep 1
 if kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

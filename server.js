@@ -61,6 +61,36 @@ function requireIndexAuth(req, res, next) {
   res.status(401).send('index 페이지를 편집하려면 로그인이 필요합니다.');
 }
 
+// The server binds to all interfaces (see app.listen below), so anyone on
+// the same LAN could otherwise POST here - unlike reading a page, this
+// route launches a native macOS app (Finder) on the host, so it's worth
+// restricting to the machine itself even though the rest of this app
+// already assumes a trusted local network per the README.
+function requireLocalhost(req, res, next) {
+  const ip = req.ip || '';
+  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return next();
+  res.status(403).json({ error: '로컬호스트에서만 사용할 수 있는 기능입니다.' });
+}
+
+// [label](file:///abs/path) links (see lib/wiki.js) render as a
+// finder-link with the path in a data-attribute; finderlink.js intercepts
+// the click and POSTs here instead of navigating, so the browser never
+// needs (and can't get) direct filesystem access itself.
+app.post('/open-in-finder', requireLocalhost, (req, res) => {
+  try {
+    const targetPath = typeof req.body.path === 'string' ? req.body.path : '';
+    if (!targetPath) return res.status(400).json({ error: '경로가 없습니다.' });
+    if (!fs.existsSync(targetPath)) {
+      return res.status(404).json({ error: '해당 경로를 찾을 수 없습니다: ' + targetPath });
+    }
+    execFileSync('open', [targetPath]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[open-in-finder] error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const UPLOAD_DIR = path.join(wiki.VAULT_DIR, '_uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
