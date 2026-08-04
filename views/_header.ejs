@@ -10,6 +10,14 @@
     <aside class="sidebar">
       <div class="brand"><a href="/">📖 Wiki</a></div>
 
+      <div class="side-section" id="ai-status-section">
+        <h3>🤖 AI 엔진</h3>
+        <p class="side-hint" id="ai-status-text">
+          <span id="ai-status-dot" class="ai-status-dot"></span>
+          <span id="ai-status-model">불러오는 중…</span>
+        </p>
+      </div>
+
       <% if (typeof mode !== 'undefined' && mode) { %>
         <div class="side-section page-mode-actions">
           <h3>🗂️ 이 페이지</h3>

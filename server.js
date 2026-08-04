@@ -150,6 +150,12 @@ app.get('/api/pages', (req, res) => {
   res.json({ pages: wiki.listPages() });
 });
 
+// Used by the sidebar AI status indicator (public/ai-status.js) to show
+// which Ollama model is currently answering the page's AI buttons.
+app.get('/api/ai-model', (req, res) => {
+  res.json({ model: ollama.OLLAMA_MODEL });
+});
+
 app.get('/graph', (req, res) => {
   res.render('graph', {});
 });
@@ -647,12 +653,22 @@ app.post('/page/:name/resume-optimize', async (req, res) => {
 });
 
 // Pulls the Python source this feature should convert: prefers a
-// ```python fenced code block already in the page body (the same place
-// "코드로 테스트하기" saves its results), falling back to an attached .py
-// file if no fenced block exists.
+// ```python fenced code block, then a multiline <code>...</code> block,
+// falling back to an attached .py file. The tag form is supported because
+// this wiki renderer also treats <code> and </code> on their own lines as a
+// Python code block.
 function extractPythonSource(body, uploadDir) {
   const fenced = body.match(/```python\r?\n([\s\S]*?)```/);
   if (fenced) return { code: fenced[1], sourceLabel: '문서 안 코드 블록' };
+
+  // Require line breaks around the tags so an inline `<code>x</code>` span
+  // is not accidentally converted into a notebook. Attributes are accepted
+  // for compatibility with ordinary HTML code-block markup.
+  const tagged = body.match(
+    /(?:^|\r?\n)[ \t]*<code(?:\s[^>]*)?>[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*<\/code>[ \t]*(?=\r?\n|$)/i
+  );
+  if (tagged) return { code: tagged[1], sourceLabel: '문서 안 <code> 블록' };
+
   const pyFile = video.findPy(body, uploadDir);
   if (pyFile) return { code: fs.readFileSync(pyFile.abs, 'utf8'), sourceLabel: pyFile.filename };
   return null;
@@ -691,7 +707,7 @@ function persistNotebookSession(name, cells) {
 function startNotebookSession(name, body) {
   const source = extractPythonSource(body, UPLOAD_DIR);
   if (!source) {
-    const err = new Error('변환할 파이썬 코드를 찾지 못했습니다. 문서에 ```python 코드 블록을 넣거나 .py 파일을 첨부해주세요.');
+    const err = new Error('변환할 파이썬 코드를 찾지 못했습니다. 문서에 ```python 또는 <code>...</code> 코드 블록을 넣거나 .py 파일을 첨부해주세요.');
     err.status = 400;
     throw err;
   }
